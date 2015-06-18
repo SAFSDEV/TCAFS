@@ -1,0 +1,317 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    PopupMenuFunctions.SVB  Library
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on Type=PopupMenu objects in 
+'#      Data-Driven Automation.
+'#      This routine is just used for forwarding, according to the domain information
+'#      it will forward to NetPopupMenuFunctions, FlexPopupMenuFunctions etc. and let them
+'#      to handle.
+'#      This routine may contain some common functions shared by NetPopupMenuFunctions, 
+'#      FlexPopupMenuFunctions and XXXPopupMenuFunctions.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#  
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 18, 2012
+'# History:
+'#
+'#      SEP 18, 2012    Original Release
+'##############################################################################
+
+'# PUBLIC DEPENDENCIES
+
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT StepDriver
+'USEUNIT StepDriver_X
+
+'USEUNIT DDGUIUtilities
+'USEUNIT GenericMasterFunctions
+'USEUNIT GenericObjectFunctions
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT StringUtilities
+'USEUNIT StringUtilities_X
+'USEUNIT MenuUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT NetPopupMenuFunctions
+'USEUNIT FlexPopupMenuFunctions
+'USEUNIT JavaPopupMenuFunctions
+
+'VALID TESTCOMMANDS 
+
+'# FORWARD DECLARATIONS
+
+'############################################################################
+'#
+'#   Function IsContextMenu()
+'#
+'# DESCRIPTION:
+'#
+'#      Get the object's type, the type is defined in the ClassObjectsMap.dat file.
+'#      ContextMenu*  = ContextMenu
+'#  
+'# PARAMETERS:
+'#
+'#      tcobject   An object.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: MAY 25, 2012
+'# History:
+'#
+'#      MAY 25, 2012    Original Release
+'#
+'############################################################################
+Function IsContextMenu(tcobject)
+    Dim mappedType
+   
+    mappedType = SDGetMappedObjectType(tcobject)
+    SAFSDebug "object's mapped type is '"&mappedType&"'", DEBUG_DEBUG
+    If mappedType = "ContextMenu" Then
+        IsContextMenu = True
+    Else
+        IsContextMenu = False
+    End If
+
+End Function
+
+
+'############################################################################
+'#
+'#   Function clickMenuItemsOnPath(hMenu, menuitemPath, separator)
+'#
+'#PARAMETERS
+'# hMenu:           is a generic TestComplete Menu Object 
+'# menuitemPath:    is path string "a->b->c"
+'# separator:       is the separator used in the menu item path, ex "->"
+'#
+'# Orig Author: Carl Nagle
+'# Orig   Date: Oct 01, 2013
+'# History:
+'#
+'############################################################################
+Function clickMenuItemsOnPath(hMenu, menuitemPath, separator)
+    Dim mArray, mLength, i, menuObject, menuitem, menutext, prefix
+    clickMenuItemsOnPath = False
+    
+    prefix = "PMF.clickMenuItemsOnPath: "    
+ 
+    On Error Resume Next
+       
+    'Try to click level by level
+    mArray = Split(menuitemPath, separator)
+    mLength = UBound(mArray)-LBound(mArray)+1
+ 
+    SAFSDebug prefix & menuitemPath & ": contains '" & CStr(mLength) & "' items.", DEBUG_DEBUG
+    
+    Set menuObject = hMenu       
+    For i=0 To mLength-1
+        menutext = mArray(i)
+        SAFSDebug prefix & "processing " & menutext, DEBUG_DEBUG
+        Set menuitem = menuObject.Items(menutext)    
+        If menuitem Is Nothing Then
+           SAFSDebug prefix &"could not retrieve menuitem '" & menutext & "'.", DEBUG_ERROR
+           Exit Function        
+        Else
+            SAFSDebug prefix &"clicking menuitem " & menutext, DEBUG_DEBUG
+            if i=(mLength-1) then
+                menuObject.Click(menutext)
+                Exit For
+            else
+                menuObject.Select(menutext)
+            End if
+        End If
+        
+        'Sleep for a while, wait for the appearence of menu
+        Delay 200
+        
+        Set menuObject = menuitem.SubMenu        
+        
+        If menuObject Is Nothing Then
+           SAFSDebug prefix &"could not retrieve "& menutext &" SubMenu.", DEBUG_ERROR
+           Exit Function 
+        End If      
+    Next
+    
+    clickMenuItemsOnPath = True
+
+End Function
+
+'############################################################################
+'#
+'#   Function clickLevelByLevel(hMenu, menuitemPath, separator)
+'#
+'#PARAMETERS
+'# hMenu:           is ContextMenu TC Object
+'# menuitemPath:    is path string "a->b->c"
+'# separator:       is the separator used in the menu item path, ex "->"
+
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 09, 2012
+'# History:
+'#
+'#      JUL 09, 2012    Original Release
+'#
+'############################################################################
+Function clickLevelByLevel(hMenu, menuitemPath, separator)
+    clickLevelByLevel = False
+    Dim mArray
+    Dim mLength
+    Dim i
+    Dim popupWin
+    Dim menuObject, menuItem
+
+    On Error Resume Next
+    
+    Set popupWin = getTopWindow(hMenu)
+    If (popupWin Is Nothing) Or (Not popupWin.Exists) Then
+        SAFSDebug "We can NOT get parent of '" & hMenu.Name & "'.", DEBUG_ERROR
+        Exit Function
+    Else
+        SAFSDebug "popupWin is '" & popupWin.Name & "'.", DEBUG_DEBUG 
+    End If
+    
+    Set menuObject = hMenu
+    mArray = Split(menuitemPath, "->")
+    mLength = UBound(mArray)-LBound(mArray)+1
+ 
+    SAFSDebug "menuitemPath is " & menuitemPath & " , contain '" & CStr(mLength) & "' items.", DEBUG_DEBUG
+        
+    For i=0 To mLength-1
+        SAFSDebug "mArray(i) is " & mArray(i), DEBUG_DEBUG
+        Select Case otrd.environment          
+            Case DDU_FLEX_ENVIRONMENT
+                Set menuItem = FlexPopupMenuFunctions.getMenuItemObject(menuObject, mArray(i)) 
+            Case DDU_NET_ENVIRONMENT
+                Set menuItem = NetPopupMenuFunctions.getMenuItemObject(menuObject, mArray(i))
+        End Select
+        
+        If (menuItem Is Nothing) or (Not menuItem.Exists) Then
+           SAFSDebug "We can't get menu item '" & mArray(i) & "'.", DEBUG_ERROR
+           Exit Function        
+        Else
+            SAFSDebug "Click menu item " & mArray(i), DEBUG_DEBUG
+            menuItem.Click
+        End If
+        
+        'If we reach the last item of the item array, then there are no more items to click
+        'we can just jump out of the loop
+        If i=(mLength-1) Then Exit For
+        
+        'Sleep for a while, wait for the appearence of menu
+        Delay 200
+        
+        Select Case otrd.environment          
+            Case DDU_FLEX_ENVIRONMENT
+                Set menuObject = FlexPopupMenuFunctions.getMenuObject(popupWin) 
+            Case DDU_NET_ENVIRONMENT
+                Set menuObject = NetPopupMenuFunctions.getMenuObject(popupWin)
+        End Select
+        
+        If (menuObject Is Nothing) or (Not menuObject.Exists) Then
+           SAFSDebug "We can't get menu of next level.", DEBUG_ERROR
+           Exit Function 
+        Else
+            SAFSDebug "got menu of next level: '"&menuObject.FullName&"'", DEBUG_DEBUG       
+        End If      
+    Next
+    
+    clickLevelByLevel = True
+    
+End Function
+
+'############################################################################
+'#
+'#   Function getTopWindow(component)
+'#
+'#   Purpose: get the window object which the popup menu belongs to.
+'#   TODO How to get the window???
+'#        For different popup menus, they may belong to different top window!!!
+'#        For now, we just return the parent of the popup menu.
+'#
+'#PARAMETERS
+'# component:           Any TC Object
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 09, 2012
+'# History:
+'#
+'#      JUL 09, 2012    Original Release
+'#
+'############################################################################
+Function getTopWindow(component)
+    Dim topWindow
+    
+    Set topWindow = component
+            
+    If topWindow.Parent.Exists And (Not topWindow.Parent is Nothing) Then
+        SAFSDebug "We got parent of '" & topWindow.Name & "'.", DEBUG_DEBUG       
+        Set topWindow = topWindow.Parent
+    Else
+        Set topWindow = Nothing
+    End If
+
+    Set getTopWindow = topWindow
+    
+End Function
+
+'############################################################################
+'#
+'#   Sub PopUpMenuMain()
+'#
+'# DESCRIPTION:
+'#
+'#      Entry point to process a StepDriver ACTION COMMAND on a PopupMenu.
+'#      The routine merely reads the Global otrd.environment and 
+'#      calls the appropriate subroutine to process it.  
+'#
+'#      If the environment is unrecognized it will call sub-routine
+'#      GenericUnimplementedCommand to process it.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 18, 2012
+'# History:
+'#
+'#      SEP 18, 2012    Original Release
+'############################################################################
+Sub PopUpMenuMain()
+
+    On Error Resume Next
+    'According to the environment, call approperiate sub-routine to process
+    SAFSDebug "Process popop menu of '"&otrd.environment&"' application.", DEBUG_INFO
+    
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            FlexPopUpMenuMain
+        Case DDU_NET_ENVIRONMENT
+            NetPopUpMenuMain
+        Case DDU_WIN32_ENVIRONMENT
+            NetPopUpMenuMain            
+        Case DDU_JAVA_ENVIRONMENT
+            JavaPopupMenuMain                                            
+        Case Else
+            SAFSDebug "Process popop menu of '"&otrd.environment&"' application" &_ 
+                      "in generic function." & vbCrLf & "New implementation maybe needed.", DEBUG_WARN                            
+            GenericUnimplementedCommand                        
+    End Select
+
+End Sub

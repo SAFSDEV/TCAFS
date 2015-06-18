@@ -1,0 +1,376 @@
+﻿'##############################################################################
+'#
+'#   DDUtilities_X.SBH  CONSTANTS, GLOBALS, TYPES etc.
+'#
+'# Working Header File used by DDUtilities library.
+'# This is where all the actual constants etc. are stored since they have to be 
+'# separate from the Export Declarations and the Sourcecode to avoid circular
+'# referencing.
+'#
+'# This library is defined by:
+'#
+'# DDUtilities_X    Constants, Globals, Types etc.
+'# DDUtilities      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 18, 2006
+'# History:
+'#
+'#      SEP 18, 2006    Original Release
+'##############################################################################
+
+
+'# USER-DEFINED TYPES
+
+'# LIBRARY CONSTANTS
+'<a name="#modes"></a>  DRIVER MODES
+Const DDU_STAND_ALONE_MODE      = 0          'called from Script (enhanced logging)
+Const DDU_DRIVEN_MODE           = 1          'called from Driver (reduced logging)
+
+Const DDU_CALLSCRIPT_IMPLIED    = 0          'invoked WITHOUT a CallScript command
+Const DDU_CALLSCRIPT_EXPLICIT   = 1          'invoked  WITH   a CallScript command
+                                             'EXAMPLES:
+                                             '
+                                             ' RunIMLProgram, arg1, arg2, arg3...
+                                             ' t, CallScript, RunIMLProgram, arg1, arg2, arg3
+
+'Configuration File constants
+Const TCAFS_CONFIG_FILE          = "TCAFS.INI"
+Const DDU_DIFF_SECT              = "DIFFER"                 '[DIFFER]
+Const DDU_DIFF_ITEM              = "TOOL_EXE"               'TOOL_EXE=
+Const DDU_DIFF_OPTIONS           = "TOOL_OPTIONS"           'TOOL_OPTIONS=
+Const DDU_DIFF_BINARY_OPTIONS    = "TOOL_BINARY_OPTIONS"    'TOOL_BINARY_OPTIONS=
+
+Const DDU_DIFFVIEW_SECT          = "DIFFVIEWER"             '[DIFFVIEWER]
+Const DDU_DIFFVIEW_ITEM          = "TOOL_EXE"               'TOOL_EXE=
+Const DDU_DIFFVIEW_OPTIONS       = "TOOL_OPTIONS"           'TOOL_OPTIONS=
+
+Const DDU_DIRECTORIES_SECT       = "DIRECTORIES"            '[DIRECTORIES]
+'Const DDU_DATADIR_ITEM           = "DATADIR"                'DataDir= (datapool) CANNOT AT THIS TIME
+Const DDU_BENCHDIR_ITEM          = "BENCHDIR"               'BenchDir=
+Const DDU_DIFFDIR_ITEM           = "DIFFDIR"                'DiffDir=
+Const DDU_LOGDIR_ITEM            = "LOGDIR"                 'LogDir=  (set one time only)
+Const DDU_TESTDIR_ITEM           = "TESTDIR"                'TestDir=
+
+'Backup Configuration Environment Settings
+Const DDU_DIFF_VIEWER_ENV_KEY = "DDE_DIFF_VIEW_EXE"
+Const DDU_DIFF_VIEWER_OPT_KEY = "DDE_DIFF_VIEW_OPTIONS"
+Const DDU_DIFF_VIEWER_DEFAULT = "EXAMDIFF.EXE"
+Const DDU_DIFF_VIEWER_DEFAULT_OPTIONS = "/t"
+
+Const DDU_DIFF_TOOL_ENV_KEY = "DDE_DIFF_TOOL_EXE"
+Const DDU_DIFF_TOOL_OPT_KEY = "DDE_DIFF_TOOL_OPTIONS"
+Const DDU_DIFF_TOOL_BINARY_OPT_KEY = "DDE_DIFF_TOOL_BINARY_OPTIONS"
+
+Const DDU_DIFF_TOOL_UNKNOWN_ID             = 0
+Const DDU_DIFF_TOOL_FC_ID                  = 1
+Const DDU_DIFF_TOOL_GNU_ID                 = 2
+
+Const DDU_DIFF_TOOL_FC                     = "FC.EXE"
+Const DDU_DIFF_TOOL_FC_OPTIONS             = "/L /T"
+Const DDU_DIFF_TOOL_FC_BINARY_OPTIONS      = "/B"
+
+Const DDU_DIFF_TOOL_GNU                    = "DIFF.EXE"
+Const DDU_DIFF_TOOL_GNU_OPTIONS            = "--text -s -y"
+Const DDU_DIFF_TOOL_GNU_BINARY_OPTIONS     = "--binary -s"
+
+Const DDU_DIFF_TOOL_DEFAULT                = "FC.EXE"
+Const DDU_DIFF_TOOL_DEFAULT_ID             = 1
+Const DDU_DIFF_TOOL_DEFAULT_OPTIONS        = "/L /T"
+Const DDU_DIFF_TOOL_DEFAULT_BINARY_OPTIONS = "/B"
+
+'<a name="#returncodes"></a>  DRIVER RETURN CODES
+Const DDU_NO_SCRIPT_FAILURE       = -1      'for scripts AND test tables
+Const DDU_SCRIPT_WARNING          = -2      'for scripts AND test tables
+Const DDU_GENERAL_SCRIPT_FAILURE  = 0       'for scripts AND test tables
+Const DDU_INVALID_FILE_IO         = 2
+Const DDU_SCRIPT_NOT_EXECUTED     = 4       'for scripts AND test tables
+Const DDU_EXIT_TABLE_COMMAND      = 8
+Const DDU_IGNORE_RETURN_CODE      = 16      'drivers ignore this one
+Const DDU_NO_RECORD_TYPE_FIELD    = 32
+Const DDU_UNRECOGNIZED_RECORD_TYPE = 64
+Const DDU_WRONG_NUM_FIELDS        = 128
+Const DDU_BRANCH_TO_BLOCKID       = 256
+
+
+'<a name="#recordtypes"></a>  DRIVER RECORD TYPES
+Const DDU_COMMENT_BLOCK_DELIMITER = "'##"   'Used to mark the start/end of comment block
+Const DDU_COMMENT_DELIMITER       = "'#"    'Used to mark a comment line within a block
+                                          '(A single quote by itself will also work)
+Const DDU_BLOCKID               = "B"
+Const DDU_DRIVER_COMMAND        = "C"
+Const DDU_DRIVER_COMMAND_FAILOK = "CF"
+Const DDU_DRIVER_COMMAND_WARNOK = "CW"
+Const DDU_SKIP_TEST_STEP        = "S"
+Const DDU_TEST_STEP             = "T"
+Const DDU_TEST_STEP_FAILOK      = "TF"
+Const DDU_TEST_STEP_WARNOK      = "TW"
+Const DDU_BREAKPOINT            = "BP"
+Const DDU_ENGINE_COMMAND        = "E"
+
+Const DDU_STEP_TEST_LEVEL       = "STEP"
+Const DDU_SUITE_TEST_LEVEL      = "SUITE"
+Const DDU_CYCLE_TEST_LEVEL      = "CYCLE"
+
+'<a name="#drivercommands"></a> DRIVER COMMANDS
+
+'DEBUGGING COMMANDS
+Const DDU_BREAKPOINTS           = "BREAKPOINTS"     'ON/OFF  STOP at (BP) BREAKPOINT records
+Const DDU_COMMAND_DEBUG         = "COMMANDDEBUG"    'ON/OFF  STOP at (C) DRIVER COMMAND records
+Const DDU_TEST_DEBUG            = "TESTDEBUG"       'ON/OFF  STOP at (T) TEST records
+Const DDU_RECORDS_DEBUG         = "RECORDSDEBUG"    'ON/OFF  STOP at ALL non-blank/non-comment records
+
+'LOG COMMANDS
+Const DDU_SUSPEND_LOGGING       = "SUSPENDLOGGING"
+Const DDU_RESUME_LOGGING        = "RESUMELOGGING"
+Const DDU_LOG_GENERIC_MESSAGE   = "LOGMESSAGE"
+Const DDU_LOG_TEST_FAILURE      = "LOGTESTFAILURE"
+Const DDU_LOG_FAILURE_OK        = "LOGFAILUREOK"
+Const DDU_LOG_TEST_WARNING      = "LOGTESTWARNING"
+Const DDU_LOG_WARNING_OK        = "LOGWARNINGOK"
+Const DDU_LOG_TEST_SUCCESS      = "LOGTESTSUCCESS"
+Const DDU_LOG_COUNTER_INFO      = "LOGCOUNTERINFO"
+
+'COUNTER COMMANDS
+Const DDU_START_COUNTER         = "STARTCOUNTER"
+Const DDU_STOP_COUNTER          = "STOPCOUNTER"
+Const DDU_RESET_COUNTER         = "RESETCOUNTER"
+Const DDU_DELETE_COUNTER        = "DELETECOUNTER"
+Const DDU_SET_COUNTER_MODE      = "SETCOUNTERMODE"
+Const DDU_STORE_COUNTER_INFO    = "STORECOUNTERINFO"
+Const DDU_SUSPEND_STATUS_COUNTS = "SUSPENDSTATUSCOUNTS"
+Const DDU_RESUME_STATUS_COUNTS  = "RESUMESTATUSCOUNTS"
+
+'DEPRECATED status commands (replaced by TRACKING COMMANDS)
+Const DDU_SET_TESTCASE          = "SETTESTCASE" 
+Const DDU_END_TESTCASE          = "ENDTESTCASE" 
+Const DDU_SET_REQUIREMENT       = "SETREQUIREMENT" 
+Const DDU_END_REQUIREMENT       = "ENDREQUIREMENT" 
+
+'TRACKING COMMANDS includes counters
+Const DDU_START_TESTCASE        = "STARTTESTCASE" 
+Const DDU_STOP_TESTCASE         = "STOPTESTCASE" 
+Const DDU_START_REQUIREMENT     = "STARTREQUIREMENT" 
+Const DDU_STOP_REQUIREMENT      = "STOPREQUIREMENT" 
+Const DDU_START_PROCEDURE       = "STARTPROCEDURE"
+Const DDU_STOP_PROCEDURE        = "STOPPROCEDURE"
+Const DDU_START_SUITE           = "STARTSUITE"        'App Suite, not DDE Suite
+Const DDU_STOP_SUITE            = "STOPSUITE"         'App Suite, not DDE Suite
+Const DDU_START_CYCLE           = "STARTCYCLE"        'App Cycle, not DDE Cycle
+Const DDU_STOP_CYCLE            = "STOPCYCLE"         'App Cycle, not DDE Cycle
+
+'MISC COMMANDS
+Const DDU_DATA_VERSION          = "VERSION"    
+Const DDU_EXPRESSIONS           = "EXPRESSIONS"     'ON/OFF
+Const DDU_USE_ROBOTJ_FUNCTIONS  = "USEROBOTJFUNCTIONS"     'ON/OFF
+Const DDU_LAUNCH_APPLICATION    = "LAUNCHAPPLICATION"
+Const DDU_CLOSE_APPLICATION     = "CLOSEAPPLICATION"
+Const DDU_SET_APPLICATION_MAP   = "SETAPPLICATIONMAP"
+Const DDU_CALL_SCRIPT           = "CALLSCRIPT"
+Const DDU_CALL_CYCLE            = "CALLCYCLE"
+Const DDU_CALL_SUITE            = "CALLSUITE"
+Const DDU_CALL_STEP             = "CALLSTEP"
+Const DDU_SCROLLWHEEL           = "SCROLLWHEEL"
+
+'Added by Carl Nagle
+Const DDU_GET_SYSTEM_TIME       = "GETSYSTEMTIME"
+Const DDU_GET_SYSTEM_DATETIME   = "GETSYSTEMDATETIME"
+
+'Added by Dawn Coen
+Const DDU_GET_SYSTEM_DATE       = "GETSYSTEMDATE"
+Const DDU_GET_SYSTEM_ENVIRON    = "GETSYSTEMENVIRON"
+Const DDU_GET_FIELD             = "GETFIELD"
+
+Const DDU_START_WEB_BROWSER     = "STARTWEBBROWSER"
+Const DDU_WAIT_FOR_WEB_PAGE     = "WAITFORWEBPAGE"
+
+Const DDU_WAIT_FOR_GUI                 = "WAITFORGUI"
+Const DDU_WAIT_FOR_GUI_GONE            = "WAITFORGUIGONE"
+Const DDU_WAIT_FOR_PROPERTY_VALUE      = "WAITFORPROPERTYVALUE"
+Const DDU_WAIT_FOR_PROPERTY_VALUE_GONE = "WAITFORPROPERTYVALUEGONE"
+
+Const DDU_PAUSE                         = "PAUSE"
+
+Const DDU_SET_VARIABLE_VALUES           = "SETVARIABLEVALUES"
+Const DDU_SET_VARIABLE_VALUE_EXPLICIT   = "SETVARIABLEVALUEEX"
+Const DDU_GET_VARIABLE_VALUE_EXPLICIT   = "GETVARIABLEVALUEEX"
+Const DDU_COPY_VARIABLE_VALUE_EXPLICIT  = "COPYVARIABLEVALUEEX"
+
+Const DDU_EXIT_TABLE                    = "EXITTABLE"   
+Const DDU_EXIT_SUITE                    = "EXITSUITE"
+Const DDU_EXIT_CYCLE                    = "EXITCYCLE"
+Const DDU_GOTO_BLOCKID                  = "GOTOBLOCKID"
+Const DDU_ON_EQUAL_GOTO_BLOCKID         = "ONEQUALGOTOBLOCKID"
+
+'Added by Bob D'Antoni 
+Const DDU_ON_LESS_THAN_GOTO_BLOCKID     = "ONLESSTHANGOTOBLOCKID"
+Const DDU_ON_GREATER_THAN_GOTO_BLOCKID  = "ONGREATERTHANGOTOBLOCKID"
+CONST DDU_ON_IN_RANGE_GOTO_BLOCKID      = "ONINRANGEGOTOBLOCKID"
+CONST DDU_ON_NOT_IN_RANGE_GOTO_BLOCKID  = "ONNOTINRANGEGOTOBLOCKID"
+
+Const DDU_ON_CONTAINS_GOTO_BLOCKID      = "ONCONTAINSGOTOBLOCKID"
+Const DDU_ON_NOT_CONTAINS_GOTO_BLOCKID  = "ONNOTCONTAINSGOTOBLOCKID"
+Const DDU_ON_NOT_EQUAL_GOTO_BLOCKID     = "ONNOTEQUALGOTOBLOCKID"
+Const DDU_ON_GUI_EXISTS_GOTO_BLOCKID    = "ONGUIEXISTSGOTOBLOCKID"
+Const DDU_ON_GUI_NOT_EXIST_GOTO_BLOCKID = "ONGUINOTEXISTGOTOBLOCKID"
+Const DDU_ON_FILE_EXIST_GOTO_BLOCKID = "ONFILEEXISTGOTOBLOCKID"
+Const DDU_ON_FILE_NOT_EXIST_GOTO_BLOCKID = "ONFILENOTEXISTGOTOBLOCKID"
+Const DDU_ON_DIRECTORY_EXIST_GOTO_BLOCKID = "ONDIRECTORYEXISTGOTOBLOCKID"
+Const DDU_ON_DIRECTORY_NOT_EXIST_GOTO_BLOCKID = "ONDIRECTORYNOTEXISTGOTOBLOCKID"
+
+Const DDU_ON_MENUITEM_CONTAINS_STATE_GOTO_BLOCKID = "ONMENUITEMCONTAINSSTATEGOTOBLOCKID"
+Const DDU_ON_PARTIAL_MENUITEM_CONTAINS_STATE_GOTO_BLOCKID = "ONPARTIALMENUITEMCONTAINSSTATEGOTOBLOCKID"
+
+'Added by Bob D'Antoni for File Library
+Const DDU_ON_FILE_EOF_GO_TO_BLOCKID ="ONFILEEOFGOTOBLOCKID"
+Const DDU_Create_File = "CREATEFILE"
+Const DDU_Open_File = "OPENFILE"
+Const DDU_Close_File = "CLOSEFILE"
+Const DDU_Delete_File = "DELETEFILE"
+Const DDU_Copy_File = "COPYFILE"
+Const DDU_Rename_File = "RENAMEFILE"
+Const DDU_Find_SQA_File = "FINDSQAFILE"
+Const DDU_Get_File_Size = "GETFILESIZE"
+Const DDU_Get_File_Date_Time = "GETFILEDATETIME"
+Const DDU_Set_File_Protections = "SETFILEPROTECTIONS"
+Const DDU_Read_File_String = "READFILESTRING"
+Const DDU_Read_File_Char = "READFILECHARS"
+Const DDU_Read_File_Line = "READFILELINE"
+Const DDU_Eof = "GETEOF"
+Const DDU_Get_Files = "GETFILES"
+Const DDU_Print_To_File = "PRINTTOFILE" 
+Const DDU_Create_Directory = "CREATEDIRECTORY"  'added by Bob D'Antoni 6/6/2003
+Const DDU_Delete_Directory = "DELETEDIRECTORY"  'added by Bob D'Antoni 6/6/2003   
+
+'End of Added by Bob D'Antoni
+
+Const DDU_SET_NoScriptFailureBlock      = "SETNOSCRIPTFAILUREBLOCK"
+Const DDU_SET_GeneralScriptFailureBlock = "SETGENERALSCRIPTFAILUREBLOCK"
+Const DDU_SET_ScriptWarningBlock        = "SETSCRIPTWARNINGBLOCK"
+Const DDU_SET_InvalidFileIOBlock        = "SETINVALIDFILEIOBLOCK"
+Const DDU_SET_ExitTableBlock            = "SETEXITTABLEBLOCK"
+Const DDU_SET_ScriptNotExecutedBlock    = "SETSCRIPTNOTEXECUTEDBLOCK"
+
+'Const DDU_SET_DATAPOOL_DIR              = "SetDatapoolDir"
+Const DDU_SET_BENCH_DIR                 = "SETBENCHDIRECTORY"
+Const DDU_SET_TEST_DIR                  = "SETTESTDIRECTORY"
+Const DDU_SET_DIF_DIR                   = "SETDIFDIRECTORY"
+Const DDU_SET_ROOT_VERIFY_DIR           = "SETROOTVERIFYDIRECTORY"
+
+Const DDU_SET_FOCUS                     = "SETFOCUS"
+Const DDU_SET_CONTEXT                   = "SETCONTEXT"
+Const DDU_CLEAR_CLIPBOARD               = "CLEARCLIPBOARD"
+Const DDU_CLEAR_VARIABLES               = "CLEARALLVARIABLES"
+Const DDU_CAPTURE_MOUSE_POS_ON_SCREEN   = "CAPTUREMOUSEPOSITIONONSCREEN"
+
+Const DDU_SAVE_CLIPBOARD_TO_FILE        = "SAVECLIPBOARDTOFILE"
+Const DDU_FILTER_TEXT_FILE              = "FILTERTEXTFILE"
+
+'<a name="#popupmenuactions"></a>POPUP MENU CONSTANTS for <a href="PopupMenuFunctions.htm">PopupMenuFunctions</a>.
+Const DDU_POPUP_MENU_COMPONENT_TYPE     = "POPUPMENU"
+Const DDU_SELECT_POPUP_MENUITEM_COMMAND = "SelectPopupMenuItem"
+Const DDU_SELECT_UNVERIFIED_POPUP_MENUITEM_COMMAND = "SelectUnverifiedPopupMenuItem"
+Const DDU_SELECT_POPUP_MENUID_COMMAND   = "SelectPopupMenuID"
+Const DDU_VERIFY_POPUP_MENUITEM_COMMAND = "VerifyPopupMenuItem"
+Const DDU_VERIFY_POPUP_MENUID_COMMAND   = "VerifyPopupMenuID"
+Const DDU_VERIFY_POPUP_MENU_COMMAND     = "VerifyPopupMenu"
+
+Const DDU_DATABASE_COMPONENT_TYPE       = "DATABASE"
+Const DDU_VERIFY_DB_VALUE               = "VerifyDBValue"
+Const DDU_VERIFY_DATABASE_VALUE         = "VerifyDatabaseValue"
+Const DDU_VERIFY_DB_NULL_VALUE          = "VerifyDBNULLValue"
+Const DDU_VERIFY_DATABASE_NULL_VALUE    = "VerifyDatabaseNULLValue"
+Const DDU_DELETE_DB_TABLE               = "DeleteDBTable"
+Const DDU_DELETE_DATABASE_TABLE         = "DeleteDatabaseTable"
+Const DDU_DELETE_DB_TABLE_RECORDS       = "DeleteDBTableRecords"
+Const DDU_EXEC_SQL_QUERY                = "ExecSQLQuery"            'Added by Nat.
+Const DDU_GET_DB_TABLE_COLUMN_COUNT     = "GetDBTableColumnCount"   '   ""
+Const DDU_GET_DB_TABLE_ROW_COUNT        = "GetDBTableRowCount"      '   ""
+Const DDU_GET_DB_VALUE                  = "GetDBValue"              '   ""
+Const DDU_COPY_DB_TABLE_TO_FILE         = "CopyDBTableToFile"       '   ""
+Const DDU_COPY_DB_TABLE_COLUMN_TO_FILE  = "CopyDBTableColumnToFile" '   ""
+
+
+Const DDDefaultTestCaseID           = "UNKNOWN"
+Const DDDefaultRequirementID        = "UNKNOWN"
+Const DDDefaultTableVersion         = "UNKNOWN"
+
+Const DDE_RUNTIME_VARIABLE          = "DDE_RUNTIME"
+Const RATIONAL_BUILD_KEYS           = "SQABuild.keys"   'in DDE_RUNTIME directory
+Const RATIONAL_BUILD_UNRECOGNIZED   = "UNKNOWN"
+
+'# Domains
+Const DDU_JAVA_ENVIRONMENT          = "JAVA"
+Const DDU_HTML_ENVIRONMENT          = "HTML"
+Const DDU_FLEX_ENVIRONMENT          = "FLEX"
+Const DDU_NET_ENVIRONMENT           = "NET"
+Const DDU_WIN32_ENVIRONMENT         = "WIN32"
+Const DDU_UNKNOWN_ENVIRONMENT       = "UNKNOWN"
+
+'Values returned by GetSQABuildCode
+Const RATIONAL_BUILD_UNKNOWN        = 0
+Const RATIONAL_BUILD_V7             = 1
+Const RATIONAL_BUILD_V2000          = 2
+Const RATIONAL_BUILD_V2001          = 3
+Const RATIONAL_BUILD_V2002          = 4
+
+
+'# GLOBAL VARIABLES
+
+'DEBUG MODE
+Dim DDU_BREAKPOINTS_ENABLED  '0 = DISABLED 1=ENABLED
+Dim DDU_BREAKPOINTS_MODE  '0 = DISABLED 1=ENABLED
+Dim DDU_COMMAND_DEBUG_MODE  '0 = DISABLED 1=ENABLED
+Dim DDU_TEST_DEBUG_MODE  '0 = DISABLED 1=ENABLED
+Dim DDU_RECORDS_DEBUG_MODE  '0 = DISABLED 1=ENABLED
+
+'EXPRESSIONS
+Dim DDU_EXPRESSIONS_MODE  '0 = DISABLED 1=ENABLED
+
+'RobotJ Hook USE
+Dim DDU_USE_ROBOTJ_FUNCTIONS_MODE  '0 = DISABLED 1=ENABLED
+
+'id of executing testcase
+Dim DDTestCaseID   
+Dim DefaultDDTestCaseID
+
+'id of requirement covered by testcase
+Dim DDRequirementID
+Dim DefaultDDRequirementID
+
+'version from data table file being read
+Dim DDTableVersion
+
+Dim DDU_ABORT_SUITE    '1=exit suite
+Dim DDU_ABORT_CYCLE    '1=exit cycle
+
+'StepDriver blockids for error recovery/flow control
+Dim DDUNoScriptFailureBlock
+Dim DDUGeneralScriptFailureBlock
+Dim DDUScriptWarningBlock 
+Dim DDUInvalidFileIOBlock
+Dim DDUExitTableBlock
+Dim DDUScriptNotExecutedBlock
+
+'SuiteDriver blockids for error recovery/flow control
+Dim DDUSTNoScriptFailureBlock
+Dim DDUSTGeneralScriptFailureBlock
+Dim DDUSTScriptWarningBlock
+Dim DDUSTInvalidFileIOBlock
+Dim DDUSTExitTableBlock
+Dim DDUSTScriptNotExecutedBlock
+
+'CycleDriver blockids for error recovery/flow control
+Dim DDUCDNoScriptFailureBlock
+Dim DDUCDGeneralScriptFailureBlock
+Dim DDUCDScriptWarningBlock
+Dim DDUCDInvalidFileIOBlock
+Dim DDUCDExitTableBlock
+Dim DDUCDScriptNotExecutedBlock
+
+'Cache Control Parameter - established by calls to function or in RRAFS.INI
+Dim DDU_CACHE_ENABLED       ' 0 - disabled (default), 1 - enabled
+Dim DDU_CACHE_SET       ' indicates if RRAFS.INI was overridden [0-no (default), 1-yes] 
+Const  RRAFS_CACHE_SECTION   = "CACHEMODE"
+Const  RRAFS_CONFIG_CACHE    = "CACHE"                  ' set to ENABLED or DISABLED
+

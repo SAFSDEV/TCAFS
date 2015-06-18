@@ -1,0 +1,377 @@
+﻿Option Explicit
+'##############################################################################
+'#
+'#    NetDataGrid.SVB  Library
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on Type=DataGrid objects in 
+'#      Data-Driven Automation.
+'#
+'# SUPPORTED ACTION 
+'#
+'#  See DataGrid.SVB
+'#
+'# History:
+'#
+'#      AUG 21, 2013    (Lei Wang) (Lei Wang) Original Release
+'#
+'##############################################################################
+
+'USEUNIT LogUtilities_X
+'USEUNIT ApplicationUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT StepDriver_X
+'USEUNIT DataGrid_X
+'USEUNIT DataGrid
+'USEUNIT StringUtilities
+'USEUNIT LogUtilities
+'USEUNIT DDUtilities
+'USEUNIT DDGUIUtilities
+
+'# FORWARD DECLARATIONS
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The DataGrid object
+'#      rowNo   Integer, The row number of the current table render, 1 based index
+'#      colNo   Integer, The column number of the current table render, 1 based index
+'# RETURNS:
+'#      A datagrid's cell object: DataGridItemRender
+'# ERRORS:
+'#       none
+'# History:
+'#
+'#      JUL 13, 2012    (Lei Wang) Original Release
+'#      AUG 20, 2013    (Lei Wang) Modify to fit Java Table
+'#
+'############################################################################
+Function getGridCellItem(grid, rowNo, colNo)
+    Dim totalRow, totalCol
+    Dim PropArray, ValuesArray, rowObj, cellObj
+    
+    On Error Resume Next
+    totalRow = getRowCount(grid)
+    If (rowNo<1 Or rowNo>totalRow) Then  
+        SAFSDebug "Invalid row index. Failed to get cell [" & CStr(rowNo) & ", " & CStr(colNo) & "]", DEBUG_WARN
+        Set getGridCellItem = Nothing
+        Exit Function
+    End If
+
+    totalCol = getColumnCount(grid)
+    If (colNo<1 Or colNo>totalCol) Then  
+        SAFSDebug "Invalid column index. Failed to get cell [" & CStr(rowNo) & ", " & CStr(colNo) & "]", DEBUG_WARN
+        Set getGridCellItem = Nothing
+        Exit Function
+    End If
+
+    Set cellObj = Nothing
+    
+    'Try to get the cell of datagrid
+    If aqObject.IsSupported(grid, "getValueAt") Then
+        SAFSDebug "Try to get cell object by native java method getValueAt().", DEBUG_DEBUG
+        Set cellObj = grid.getValueAt(rowNo-1, colNo-1)
+    End If
+
+    If cellObj.Exists Then
+        Set getGridCellItem = cellObj
+    Else
+        SAFSDebug "The cell object was not found.", DEBUG_DEBUG
+    End If
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the value of datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The Flex DataGrid object
+'#      rowNo   Integer, The row number of the current table render, 1 based index
+'#      colNo   Integer, The column number of the current table render, 1 based index
+'# RETURNS:
+'#      The value of datagrid's cell object
+'# ERRORS:
+'#       none
+'# History:
+'#      JUL 13, 2012    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getCellItemValue(grid, rowNo, colNo)
+    Dim cell
+  
+    getCellItemValue = ""
+    On Error Resume Next
+    Err.Clear
+    SAFSDebug "Try to get the value of cell("&rowno&", "&colNo&").", DEBUG_DEBUG
+    'getCellItemValue = grid.wValue(rowNo-1, colNo-1)
+    
+    If Err.Number<>0 Or getCellItemValue="" Then
+        SAFSDebug "Can't get cell value by API wValue(row,col) .", DEBUG_DEBUG
+        Err.Clear
+        'Try to get the cell object of the datagrid
+        Set cell= getGridCellItem(grid, rowNo, colNo)
+        If (Not cell Is Nothing) And cell.Exists Then
+            getCellItemValue = getCellText(cell) 
+        End If
+    End If
+    
+    SAFSDebug "cell("&rowno&", "&colNo&")='"&getCellItemValue&"'", DEBUG_DEBUG
+    
+    If Err.Number <> 0 Then
+        SAFSDebug "During get value of cell(" & CStr(rowNo) & "," & CStr(colNo) & ")," & _
+                  "Met Error: " & Err.Number, DEBUG_WARN 
+    End If
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get an array of datagrid's column headers (DataGridColumn object)
+'# PARAMETERS:
+'#      grid    The Flex DataGrid object
+'# RETURNS:
+'#      An array of datagrid's column headers 
+'# ERRORS:
+'#       none
+'# History:
+'#      JUL 13, 2012    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getColumnHeaders(grid)
+    Dim headers()
+    Dim columnCount
+    Dim column, startIndex, index
+    Dim removeFirstColumn
+    Dim rowHeaderColumnNumber
+    
+    On Error Resume Next
+    'If datagrid has row header, 
+    'then the first column is the for row header, 
+    'it should not be considered as the datagrid's column header
+    removeFirstColumn = hasRowHeader(grid, rowHeaderColumnNumber)
+    
+    columnCount = getColumnCount(grid) -1
+    If removeFirstColumn Then
+        SAFSDebug "This datagrid contains row header column. ", DEBUG_DEBUG
+        startIndex = rowHeaderColumnNumber
+    Else
+        startIndex = 0
+    End If 
+    If startIndex > columnCount Then
+        SAFSDebug "This datagrid doesn't contain any more columns except 'rowHeader column'. ", DEBUG_ERROR
+        Exit Function
+    End If
+    
+    ReDim headers(columnCount-startIndex)
+    
+    index = 0
+    For column = startIndex to columnCount
+        headers(index) = DataGrid.getColumnHeader(grid, column, True)
+        index = index + 1
+    Next
+    
+    If Err.Number = 0 Then
+        getColumnHeaders = headers
+    Else
+        SAFSDebug "Can't get headers, Met Error: " & Err.Number, DEBUG_WARN
+    End If
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get an 2-dimensions array of datagrid's cell value, the range is
+'#      limited by parameters: row, column, rows, columns
+'# PARAMETERS:
+'#      grid    In      The Flex DataGrid object
+'#      row     In      The row number from where to begin to capture, 1-based index
+'#      column  In      The column number from where to begin to capture, 1-based index
+'#      rows    In      The number of rows to read from the begin row
+'#      columns In      The number of column to read from the begin column
+'#      data    Out     The 2-dimension array to contain the datagrid's cell values
+'# RETURNS:
+'#      0,      Success
+'#      Not 0,  Fail
+'# ERRORS:
+'#       none
+'# History:
+'#      JUL 13, 2012    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getDataGridCellRange(grid, row, column, rows, columns, data)
+    Dim totalRow, totalColumn
+    Dim i, j
+    
+    On Error Resume Next
+    If row<1 or column<1 Then
+        SAFSDebug "The row and column should not be smaller than 1.", DEBUG_ERROR
+        getDataGridCellRange = -1
+        Exit Function
+    End If
+    
+    totalRow = getRowCount(grid)
+    totalColumn = getColumnCount(grid)
+    
+    If (row+rows-1>totalRow) Or (column+columns-1>totalColumn) Then
+        SAFSDebug "The range is out of the whole table content.", DEBUG_ERROR
+        getDataGridCellRange = -2
+        Exit Function    
+    End If
+    
+    Redim data(rows-1,columns-1)
+    For i=0 To rows-1
+        For j=0 To columns-1
+            data(i,j) =  getCellItemValue(grid,row+i, column+j)
+        Next    
+    Next    
+        
+    getDataGridCellRange = 0
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Test if a datagrid has a 'row header'
+'#      This function is not trustable, it need to be modified for different kinds
+'#      of DataGrid, depends on how the 'row header' is implemented.
+'# PARAMETERS:
+'#      datagrid                The Java DataGrid object.
+'#      rowHeaderColumnNumber   (Out) How many columns does 'row header' contain
+'#                              Not implemented yet.
+'# RETURNS:
+'#      True if the datagrid has a row header
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'#      AUG 20, 2013    (Lei Wang) Add one parameter and test property 'RowHeadersVisible'. Just return false. TODO
+'#
+'############################################################################
+Function hasRowHeader(datagrid, rowHeaderColumnNumber)
+    On Error Resume Next
+    hasRowHeader = False
+    
+    'TODO
+    
+End Function
+
+'#      Decide if cell(rowNumber, columnNumber) is editable
+'#      grid            The DataGrid object
+'#      rowNumber       The row number, 1-based, not used here
+'#      columnNumber    The column number, 1-based
+Function isCellEditable(grid, rowNumber, columnNumber)
+    On Error Resume Next  
+    Err.Clear
+
+    isCellEditable = grid.isCellEditable(rowNumber-1, columnNumber-1)
+    If Err.Number<>0 Then
+        SAFSDebug "Fail to call java native method isCellEditable(), Met Error: " & Err.Number, DEBUG_WARN
+        isCellEditable = False
+        Exit Function
+    End if
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the cell's text value
+'# PARAMETERS:
+'#      cell       The cell item Object, it can be any different type.
+'# RETURNS:
+'#      The cell's text value
+'# ERRORS:
+'#       none
+'# History:
+'#      AUG 20, 2013    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getCellText(cell)
+    Dim text
+    Dim PropArray, ValuesArray, textBlockObj
+    
+    SAFSDebug "Cell's class is " & cell.JavaClassName & ".", DEBUG_DEBUG
+    
+    On Error Resume Next
+    Err.Clear
+    
+    If aqObject.IsSupported(cell, "OleValue") Then
+        text = cell.OleValue
+    End If 
+    
+    If Err.Number<>0  Or isEmpty(text) Or isNull(text) Then
+        SAFSDebug "During get cell's text for cell '" &classname&"'. Met Error=" & CStr(Err.Number) , DEBUG_WARN
+        Err.Clear
+    End if
+    
+    SAFSDebug "Cell's text is '" +text+ "'", DEBUG_INFO
+    getCellText = text
+
+End Function
+
+'#      get the total number of rows in a table
+Function GetRowCount(table)
+    On Error Resume Next
+    Err.Clear
+    GetRowCount = table.GetRowCount()
+    
+    if Err.Number <> 0 or isEmpty(GetRowCount) or isNull(GetRowCount) then
+        Err.Clear
+        'TODO do something special for java domain   
+    end if
+
+End Function
+
+'#      get the total number of columns in a table
+Function GetColumnCount(table)
+    On Error Resume Next
+    Err.Clear
+    GetColumnCount = table.GetColumnCount()
+    
+    if Err.Number <> 0 or isEmpty(GetColumnCount) or isNull(GetColumnCount) then 
+        Err.Clear
+        'TODO do something special for java domain    
+    end if
+End Function
+
+'If the table has a visible 'column header', the function should return true
+'table The DataGrid object
+Function HasColumnHeader(table)
+    Dim hasHeader
+    Dim parent, columnHeader
+    Dim props, values
+    On Error Resume Next  
+    Err.Clear
+    
+    Set parent = table.Parent
+    If Err.Number=0 and IsObject(parent) Then
+        Set parent = parent.Parent
+        If Err.Number=0 and IsObject(parent) Then
+            Set parent = parent.Parent
+        End If
+    End If
+    
+    Err.Clear
+    props = Array( "JavaClassName" , "Visible")   
+    values = Array( "*TableHeader*", "True")
+    Set columnHeader = parent.FindChild(props,values)
+    
+    if Err.Number=0 and IsObject(columnHeader) then
+        hasHeader = True
+    end if
+    HasColumnHeader = hasHeader
+End Function
+
+'#      columnNumber        The index, 0-based
+'#      get the column object in a table according to the index
+Function GetColumnObject(grid, columnNumber)
+    Dim columModel, column
+    On Error Resume Next  
+    Err.Clear
+    Set GetColumnObject = Nothing
+    Set columModel = grid.getColumnModel()
+    If Err.Number=0 and IsObject(columModel) Then
+      Set column = columModel.getColumn(columnNumber)
+      If Err.Number=0 and IsObject(column) Then
+        Set GetColumnObject = column
+      End If
+    End if
+End Function

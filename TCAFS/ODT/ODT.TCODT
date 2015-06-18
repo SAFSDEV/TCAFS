@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE Nodes [
+
+<!ENTITY % NameValue "CDATA">
+<!ENTITY % PropType "(I|S|D|L|H|B)">
+<!ENTITY % VersionValue "CDATA">
+
+<!ELEMENT Prp (#PCDATA)>
+<!ELEMENT Node (Node|Prp)*>
+<!ELEMENT Nodes (Node)+>
+
+<!ATTLIST Nodes version CDATA "1">
+
+<!ATTLIST Node name CDATA #REQUIRED>
+
+<!ATTLIST Prp name CDATA #REQUIRED>
+<!ATTLIST Prp type CDATA #REQUIRED>
+<!ATTLIST Prp value CDATA #REQUIRED>
+]>
+<Nodes version="1">
+	<Node name="root">
+		<Node name="child list">
+			<Node name="item1">
+				<Node name="item data">
+					<Node name="settings"/>
+					<Prp name="&amp;path" type="S" value=""/>
+					<Prp name="caption" type="S" value="Data"/>
+					<Prp name="version" type="S" value="4.0"/>
+					<Prp name="signature" type="S" value="{B9B4EF8F-E6EA-4F24-B9AB-7E9328D384F6}"/>
+				</Node>
+				<Prp name="type" type="S" value="{B9B4EF8F-E6EA-4F24-B9AB-7E9328D384F6}"/>
+				<Prp name="typename" type="S" value="Data"/>
+				<Prp name="key" type="S" value="{60E3F87D-8BB1-4E5A-9AA4-468F26DB5E73}"/>
+				<Prp name="index" type="I" value="1"/>
+			</Node>
+			<Node name="item0">
+				<Node name="item data">
+					<Node name="settings"/>
+					<Prp name="&amp;path" type="S" value=""/>
+					<Prp name="caption" type="S" value="Classes"/>
+					<Prp name="version" type="S" value="4.0"/>
+					<Prp name="signature" type="S" value="{EEF77318-2B4E-4834-A68E-9730BD066B8B}"/>
+				</Node>
+				<Prp name="type" type="S" value="{EEF77318-2B4E-4834-A68E-9730BD066B8B}"/>
+				<Prp name="typename" type="S" value="Classes"/>
+				<Prp name="key" type="S" value="{5DD0B80B-A7E0-4B68-ACC5-C788C426FE09}"/>
+				<Prp name="index" type="I" value="0"/>
+			</Node>
+		</Node>
+		<Node name="settings"/>
+		<Prp name="signature" type="S" value="{7ABA5999-8A66-47F5-8D2C-2C0334223A97}"/>
+		<Prp name="version" type="S" value="4.0"/>
+	</Node>
+</Nodes>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE Nodes [
+
+<!ENTITY % NameValue "CDATA">
+<!ENTITY % PropType "(I|S|D|L|H|B)">
+<!ENTITY % VersionValue "CDATA">
+
+<!ELEMENT Prp (#PCDATA)>
+<!ELEMENT Node (Node|Prp)*>
+<!ELEMENT Nodes (Node)+>
+
+<!ATTLIST Nodes version CDATA "1">
+
+<!ATTLIST Node name CDATA #REQUIRED>
+
+<!ATTLIST Prp name CDATA #REQUIRED>
+<!ATTLIST Prp type CDATA #REQUIRED>
+<!ATTLIST Prp value CDATA #REQUIRED>
+]>
+<Nodes version="1">
+	<Node name="root">
+		<Node name="child list">
+			<Node name="item0000000000">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="ProcessContainer.tcUsrFrm"/>
+				</Node>
+				<Prp name="index" type="I" value="0"/>
+				<Prp name="key" type="S" value="{6A76D6CB-46B7-485A-B71D-B90A0B811253}"/>
+				<Prp name="pluginname" type="S" value="User Forms"/>
+				<Prp name="type" type="S" value="{8199FB45-A0A8-407E-A3F6-3DA213121896}"/>
+				<Prp name="typename" type="S" value="User Form"/>
+			</Node>
+		</Node>
+		<Node name="folders">
+			<Node name="folders"/>
+		</Node>
+		<Node name="settings">
+			<Prp name="settingsversion" type="S" value="9.10"/>
+		</Node>
+		<Prp name="signature" type="S" value="{1C914193-A452-48E8-A8FD-BCA13ACFF263}"/>
+		<Prp name="version" type="S" value="9.0"/>
+	</Node>
+</Nodes>

@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ScriptExtensionGroup>
+
+  <Category Name="Tools">
+ 
+    <ScriptExtension Name="TFSM" Author="Dharmesh Patel(SAFS Automation)" Version="1.0" HomePage="http://safsdev.sourceforge.net">
+      <Script Name="TFSM.vbs">
+        <DesignTimeAction Name="TFSM" Routine="DesignTimeExecute"/>
+      </Script>
+      <Description>
+        Verify TFSM Recognition String tools.
+      </Description>
+    </ScriptExtension>    
+  </Category>
+</ScriptExtensionGroup>

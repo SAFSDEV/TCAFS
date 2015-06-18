@@ -1,0 +1,1074 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    DDDriverCommands.SBL  SOURCECODE
+'#
+'#    NOTE:  When adding routines update exports in DDDriverCommands.SBH      
+'#    NOTE:  Constants for Driver Command Keywords are generally stored in DDUtilities_X.SBH
+'#
+'#
+'#
+'# MODULE DESCRIPTION:
+'#
+'# The documentation for each function is provided as reference for DDE users 
+'# when developing DDE test tables.  This DDE format and syntax information IS 
+'# intended for public use and does not normally change with the underlying code.
+'#
+'# The routines themselves are not intended for public use.
+'# Their internal functionality and their declaration prototypes 
+'# are subject to change as deemed necessary to support the drivers 
+'# mentioned above.
+'#
+'#
+'# This library is defined by:
+'#
+'# DDDriverCommands      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      NOV 22, 2011    (Lei Wang)    Mark Function FillGUIIDs() as deprcated,
+'#                                  Modify Function DDEDriverCommand(): Call SDinitOTRDGUIIDVariables()
+'#                                  instead of FillGUIIDs() to get window and component object
+'#      NOV 24, 2011    (Lei Wang)    Move some codes from DDEDriverCommand() to SetFoucusByNativeAPI()
+'#      JUN 05, 2012    (Lei Wang)    Update to better support SetFocus keyword.
+'#      JUL 09, 2013    (Carl Nagle)    Added ScrollWheel keyword support.
+'#      JUL 19, 2013    (Carl Nagle)    Disabled ClearAllVariables.
+'#      SEP 29, 2013    (Lei Wang)    Update SetFocus: stop using ToUrl(), fix SetFoucusByNativeAPI
+'##############################################################################
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT CheckBoxFunctions
+'USEUNIT ComboBoxFunctions
+'USEUNIT ComboEditBoxFunctions
+'USEUNIT CustomDriverCommands
+'USEUNIT CustomDriverCommands_X
+'USEUNIT CustomLogUtilities
+'USEUNIT CustomLogUtilities_X
+'USEUNIT CustomRecordTypes
+'USEUNIT CustomRecordTypes_X
+'USEUNIT CustomStatusUtilities
+'USEUNIT CustomStatusUtilities_X
+'USEUNIT CustomTestCommands
+'USEUNIT CustomTestCommands_X
+'USEUNIT CustomUtilities
+'USEUNIT CustomUtilities_X
+'USEUNIT DDDriverCounterCommands
+'USEUNIT DDEDriverDeprecatedCommand
+'USEUNIT DDEDriverFlowCommand
+'USEUNIT DDGUIUtilities
+'USEUNIT DDGUIUtilities_X
+'USEUNIT DDUtilities
+'USEUNIT DDUtilities_X
+'USEUNIT DDVariableStore
+'USEUNIT EditBoxFunctions
+'USEUNIT GenericMasterFunctions
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT GenericObjectFunctions
+'USEUNIT GraphicControlFunctions
+'USEUNIT GroupBoxFunctions
+'USEUNIT HTMLDocumentFunctions
+'USEUNIT HTMLFunctions
+'USEUNIT HTMLImageFunctions
+'USEUNIT HTMLLinkFunctions
+'USEUNIT HTMLTableFunctions
+'USEUNIT ImageUtilities
+'USEUNIT ImageUtilities_X
+'USEUNIT LabelFunctions
+'USEUNIT ListBoxFunctions
+'USEUNIT ListViewFunctions
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT MenuUtilities
+'USEUNIT MenuUtilities_X
+'USEUNIT PopupMenuFunctions
+'USEUNIT PushButtonFunctions
+'USEUNIT RadioButtonFunctions
+'USEUNIT SSTreeFunctions
+'USEUNIT ScrollBarFunctions
+'USEUNIT StepDriver
+'USEUNIT StepDriver_X
+'USEUNIT StringUtilities
+'USEUNIT TabControlFunctions
+'USEUNIT ToolBarFunctions
+'USEUNIT TreeViewFunctions
+'USEUNIT TreeViewFunctions_X
+'USEUNIT V2003Functions
+'USEUNIT VSFlexGridFunctions
+'USEUNIT WindowFunctions 
+'USEUNIT Win32Utilities
+
+
+
+'# PRIVATE DEPENDENCIES
+
+'# FORWARD DECLARATIONS
+
+CONST DDC_GET_DELTA_DATE_COMMAND = "GETDELTADATE"
+CONST DDC_GETCOMPSCREENRES_COMMAND = "GETCOMPSCREENRESOLUTION"
+
+Dim triedRobotJ
+Dim launchRobotJ
+Dim RobotJReady
+Dim triedDriverCommands
+Dim launchDriverCommands
+Dim DriverCommandsReady
+
+'###########################################################################
+'#
+'#  Function DDEImpliedCallScript(scriptName as String, 
+'#                         guiInfo As AUGUIInfo, 
+'#                         statusInfo As AUStatusInfo
+'#                        ) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Invokes an automation tool script with the provided scriptName.  
+'#      If the script does NOT exist then the routine routes the record 
+'#      for <a href="CustomRecordTypes.htm">Custom Record Type</a> processing.
+'#
+'#      The routine logs the start and end of the script and sets and receives 
+'#      the global <a href="ApplicationUtilities.htm">ApplicationUtilities'</a> ScriptGUIInfo and ScriptStatusInfo 
+'#      structures for the script.  It does this via the DDECallScript routine.
+'#
+'#      An implied script invocation is when the record type of the current 
+'#      table is unrecognized.  When this happens the DDE assumes the record type 
+'#      field is actually the name of a tool script to be executed.  This, then, is 
+'#      actually an implied short version of the Driver Command  C,  CallScript
+'#
+'#      However, if no such script exists, we check for the implementation 
+'#      of <a href="CustomRecordTypes.htm#customdderecord">Custom Record Type</a>.
+'#
+'#
+'#      CALLING A SCRIPT AND PASSING PARAMETERS TO IT:
+'#
+'#      You should assign script arguments or parameters to DDVariables as shown in the
+'#      example below.  You can simply retrieve the value of each variable using 
+'#      the <a href="DDVariableStore.htm#DDVGetVariableValue">DDVariableStore.DDVGetVariableValue</a> routine.
+'#
+'#      CALLING IMPLIED SCRIPT EXAMPLE:
+'#
+'#      EnterNewUser   ^name.first=John   ^name.last=Smith   ^dept=BST   ^ext=x9999
+'#
+'#      &lt; continue with more table records &gt;
+'#
+'#      
+'#      In the above example, "EnterNewUser" is the name of a valid Robot Script 
+'#      that will be executed.  The other fields are DDVariables that are set for 
+'#      use by the script and the rest of the DDE.
+'#
+'#      See <a href="UsingDDVariables.htm">Using DDVariables</a> for more information on this nifty capability!      
+'#
+'#
+'#      This routine is not intended for public use.
+'#      Internal functionality and declaration prototypes 
+'#      are subject to change as deemed necessary to support the core drivers.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      scriptName      String name of the script to call. (no file extension)
+'#      AUGUIInfo       from the calling Driver
+'#      AUStatusInfo    from the calling Driver
+'#
+'# RETURNS:
+'#
+'#      Returns DDU_SCRIPT_WARNING if no Script or matching CustomRecordType is found.
+'#      Scripts or CustomRecordType processing should return the following values:
+'#
+'#            INCREMENTS GENERAL STATUS COUNTERS AUTOMATICALLY--BUT NOT TEST COUNTERS
+'#            =======================================================================
+'#            DDU_NO_SCRIPT_FAILURE       = -1      'we DID process the record (failures may have been logged)
+'#            DDU_SCRIPT_WARNING          = -2      'a process failure OR no Script/CustomRecordType match
+'#            DDU_GENERAL_SCRIPT_FAILURE  = 0       'a general failure in the Script/CustomRecordType handling
+'#            DDU_INVALID_FILE_IO         = 2       'an IO failure occurred
+'#
+'#            DOES NOT INCREMENT ANY STATUS COUNTERS AUTOMATICALLY
+'#            =======================================================================
+'#            DDU_SCRIPT_NOT_EXECUTED     = 4       'generally means noone tried to process the record
+'#            DDU_EXIT_TABLE_COMMAND      = 8       'force immediate exit of current test table
+'#            DDU_IGNORE_RETURN_CODE      = 16      'drivers ignore this one
+'#
+'#      The routines for incrementing counters can be found in the <a href="ApplicationUtilities.htm">ApplicationUtilities</a> library.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'###########################################################################
+Function DDEImpliedCallScript (scriptName, statusInfo)
+    
+    Dim tempString
+    Dim Result
+
+    With otrd
+            
+        tempString = scriptName
+                
+        Log.Enabled = False
+        Result = Utilities.FileExists(scriptName)
+        Log.Enabled = True
+
+        if Result = True then
+            Result = DDECallScript (scriptName, statusInfo)
+
+        'if a SCRIPT by this name does not exist in the current Project 
+        'then we possibly have a custom record type
+        else
+            Result = CustomDDERecord(scriptName, statusInfo)
+            If Result = DDU_SCRIPT_NOT_EXECUTED then
+                LogMessage  "Unknown RECORD TYPE or SCRIPT NAME in table "& .FileName _
+                            &" at line "& .LineNumber, _
+                           WARNING_MESSAGE, ""
+                Result = DDU_SCRIPT_WARNING
+            end if
+        end if        
+    End With
+    
+    DDEImpliedCallScript = Result
+    
+End Function
+
+
+
+'attempts to fill .windowGUID and .compGUIID from the AUGetCurrentAPPMap
+'using the .windowname and .compname of the guiInfo provided.
+'0 on success, sqaFAIL-1 on failure.
+'logs errors if either occur.
+'# This Function has been deprecated, please use Function 
+'# SDinitOTRDGUIIDVariables(winname, cmpname) of StepDriver instead
+Function FillGUIIDs ()
+
+    FillGUIIDs = FALSE
+        
+    With otrd
+        otrd.setWinGUIID(Eval(DDGGetGUIID (.windowname, .windowname, .AppMapName)))
+        'set .windowGUIID = Eval(DDGGetGUIID(.windowname, .windowname, .AppMapName))
+        if Not IsObject(.windowGUIID) then  
+            LogMessage "WINDOWNAME:" & .WindowName &"\"& .WindowName & _
+               " not found in AppMap " & AUGetCurrentAppMap() & " from table " & _
+               .FileName & " at Line " & .LineNumber, _
+               FAILED_MESSAGE, .InputRecord
+            exit function                                
+        end if
+        
+        'get component recognition method using DDGUIUtilities Global DDGAppMapPath
+        otrd.setCompGUIID(Eval(DDGGetGUIID (.windowname, .Compname, .AppMapName)))
+        'set .compGUIID   = Eval(DDGGetGUIID(.windowname, .compname, .AppMapName))
+        if Not IsObject(.compGUIID) then  
+            LogMessage "COMPONENTNAME:" & .WindowName &"\"& .CompName & _
+               " not found in AppMap " & AUGetCurrentAppMap() & " from table " & _
+               .FileName & " at Line " & .LineNumber, _
+               FAILED_MESSAGE, .InputRecord
+            exit function                                
+        end if
+    End With
+
+    FillGUIIDs = TRUE
+
+End Function
+
+'############################################################################
+'#
+'#  Function DDESkippedRecord (guiInfo As AUGUIInfo, statusInfo As AUStatusInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Processes a SKIPPED RECORD from the InputRecord.
+'#      This outputs a SKIPPED_TEST_MESSAGE with text retrieved from the 2nd 
+'#      field of the inputrecord.  
+'#
+'#      Field #1:   The SKIP_TEST_STEP (S).
+'#      Field #2:   A comment to explain why (like a Defect # or failure info).
+'#      Field #3-N: Normaly Fields 1-N moved over from the record being skipped.
+'#
+'#      Normally, you would merely move pre-existing fields over by preceding 
+'#      them with these two fields (skipped test record type and its comment) 
+'#      so that the test can later be reinstituted by simply deleting these 
+'#      first two fields.
+'#
+'#      A normal record NOT skipped:
+'#
+'#         T  AFailingTest    ^param1=value   ^param2=value 
+'#
+'#
+'#      SKIPPED:
+'#
+'#         S  Defect:D12345   T   AFailingTest     ^param1=value   ^param2=value
+'#
+'#
+'#      This routine is not intended for public use.
+'#      Internal functionality and declaration prototypes 
+'#      are subject to change as deemed necessary to support the core drivers.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      AUGUIInfo       from the calling Driver
+'#      AUStatusInfo    from the calling Driver
+'#
+'# RETURNS:
+'#
+'#      Normally DDU_NO_SCRIPT_FAILURE unless something unforeseen causes the 
+'#      routine to exit prematurely.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDESkippedRecord(statusInfo)
+
+    DIM msgText
+    
+    DDESkippedRecord = DDU_GENERAL_SCRIPT_FAILURE
+
+    With otrd
+        msgText = GetTrimmedQuotedField(.InputRecord, 2, .Separator())
+        LogMessage msgText, SKIPPED_TEST_MESSAGE, ""
+    End With
+    
+    DDESkippedRecord = DDU_NO_SCRIPT_FAILURE
+
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDEProcessBlockID (guiInfo As AUGUIInfo, statusInfo As AUStatusInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Process a BlockId record type from the InputRecord.
+'#
+'#      Field #1:   The BLOCKID recordType (B).
+'#      Field #2:   The user-defined text ID for this block.
+'#
+'#      Example:
+'#
+'#         B   StartOfTest5
+'#
+'#      By itself, there is no real processing of a BlockID.  However, the recordType 
+'#      is used to identify the target location used for many Error Recovery and 
+'#      Flow Control commands. See, <a href="DDDriverFlowCommands.htm">DDDriverFlowCommands</a> and
+'#      <a href="UsingFlowControl.htm" >Error Recovery and Flow Control</a>.
+'#
+'#      This routine is not intended for public use.
+'#      Internal functionality and declaration prototypes 
+'#      are subject to change as deemed necessary to support the core drivers.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      AUGUIInfo       from the calling Driver
+'#      AUStatusInfo    from the calling Driver
+'#
+'# RETURNS:
+'#
+'#      Normally DDU_NO_SCRIPT_FAILURE unless something unforeseen causes the 
+'#      routine to exit prematurely.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDEProcessBlockID(statusInfo)
+
+    Dim blockID
+    
+    DDEProcessBlockID = DDU_NO_SCRIPT_FAILURE
+    With otrd    
+        blockID = GetTrimmedQuotedField(.inputrecord, 2, .separator)
+        LogMessage "Begin Block """& blockID &"""", "", ""
+    End With
+End Function
+
+
+
+Sub checkDriverCommandsStatus(fac)
+    if not triedDriverCommands then
+        triedDriverCommands = TRUE
+        DriverCommandsReady = SAFSisDriverCommandsAvailable()
+        if not DriverCommandsReady then
+            launchDriverCommands = GetConfigurationSetting(SAFS_DRIVER_COMMAND_SECTION, _
+                                                           SAFS_CONFIG_AUTOLAUNCH)
+            if (UCASE(launchDriverCommands)="TRUE")OR(UCASE(launchDriverCommands)="YES") then
+                DriverCommandsReady = SAFSAutoLaunchDriverCommands()
+                if not DriverCommandsReady then
+                    LogMessage "DriverCommands Hook Not Installed or Available.", _
+                               WARNING_MESSAGE, ""
+                end if
+            end if
+        end if
+    end if
+End Sub
+
+
+'############################################################################
+'#
+'#  Function DDEDriverCommand(guiInfo As AUGUIInfo, statusInfo As AUStatusInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Processes a DDE DRIVER COMMAND from the AUGUIInfo.InputRecord provided.
+'#      Driver commands are not treated as test commands but instructions to 
+'#      the Drivers for setting parameters of the test environment, running 
+'#      other scripts, or other stuff (whatever gets in here).
+'#
+'#      Different driver commands have different parameters as described below.
+'#      For reference, the first fields are defined below:
+'#
+'#      Field #1:   The "C" = DRIVER COMMAND. 
+'#      Field #2:   The Driver Command to execute. (see definitions below).
+'#
+'#      Example:
+'#
+'#          c , SetApplicationMap , "AppMap.map"
+'#
+'#      Parameters must be placed in the order specified.  
+'#      Parameters numbered in brackets are optional.  
+'#      However, to use an optional parameter which follows other optional 
+'#      parameters all the preceding parameters must exist or at least have 
+'#      field delimited space reserved for them.
+'#
+'#      See http://safsdev.sourceforge.net/sqabasic2000/SAFSReference.php?rt=C&lib=DDDriverCommands
+'#
+'#
+'# PARAMETERS:
+'#
+'#      AUGUIInfo       from the calling Driver
+'#      AUStatusInfo    from the calling Driver
+'#
+'# RETURNS:
+'#
+'#      Normally DDU_NO_SCRIPT_FAILURE unless something unforeseen causes the 
+'#      routine to exit prematurely.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      JUL 19, 2013    Carl Nagle Disabled ClearAllVariables
+'#      OCT 09, 2013    Carl Nagle Implement ClearAppMapCache
+'#
+'############################################################################
+Function DDEDriverCommand(statusInfo)
+    
+    Dim DriverCMD
+    Dim field(10)
+    Dim tempstatus 
+    'Set tempstatus = New AUStatusInfo
+    
+    'Dim info As AUApplicationInfo
+    Dim status
+    Dim temp
+    Dim tempstring
+    Dim itemp
+    Dim ltemp
+    Dim result
+    Dim stafstatus
+    Dim errCount
+    with otrd
+        On Error Resume Next
+        'check for DEBUG MODE
+        if DDU_COMMAND_DEBUG_MODE <> 0 then STOP
+
+        'DEBUGMODE: You are now in DDDriverCommands processing a C, CF, or CW command record.
+        DriverCMD = GetTrimmedQuotedField(.inputrecord, 2, .separator)
+
+        SAFSDebug "DDDriverCommands processing '"& DriverCMD &"'", DEBUG_INFO
+
+        if (UCase(DriverCMD) = DDU_SET_VARIABLE_VALUES) then        
+             'the work is actually already done by the main Driver routine prior to getting us here!
+             LogMessage .InputRecord &" completed.", "", ""
+             .statuscode = DDU_NO_SCRIPT_FAILURE
+             DDEDriverCommand = .statuscode
+             Exit function
+        end if                
+
+        .statuscode = DDU_GENERAL_SCRIPT_FAILURE 'initialize this function as failed
+      
+        Select Case UCase(DriverCMD)        
+        
+        Case SDDATA_VERSION
+
+            ' 3 = Version String
+            DDTableVersion = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+            if DDTableVersion = "" then
+                LogMessage "Unknown Table Version specified in table "& _
+                            .FileName & " at Line " & .LineNumber, _
+                            WARNING_MESSAGE, .InputRecord
+                .statuscode = DDU_SCRIPT_WARNING    
+            else
+                LogMessage "Table Version: "& DDTableVersion, "", ""
+                .statuscode = DDU_NO_SCRIPT_FAILURE
+            end if
+        
+        Case SDCLEAR_APP_MAP_CACHE
+
+             status = DDGClearAppMapCache()
+             if status <> 0 then
+                 LogMessage "Error("& status &"):ClearAppMapCache did not "& _
+                     "complete successfully in table " & _
+                     .FileName & " at line " & .LineNumber, _
+                     WARNING_MESSAGE, .InputRecord
+                 .statuscode = DDU_SCRIPT_WARNING
+             else
+                 LogMessage "ClearAppMapCache should be completed.", "", ""
+                 .statuscode = DDU_NO_SCRIPT_FAILURE
+             end if
+        Case SDWAIT_FOR_WEB_PAGE
+        
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+
+             If .compname = "" Then 
+                .compname = .windowname
+             End If
+
+             if field(5) <> "" then 
+                if Not IsNumeric(field(5)) then 
+                    field(5) = 30
+                    LogMessage "Invalid WaitForWebPage timeout parameter.  Using default: 30.", _
+                    WARNING_MESSAGE, .InputRecord
+                end if
+             else
+                field(5) = 30                
+             end if
+             
+             field(1) = "Waiting "& CStr(field(5)) &" seconds for Web Page "& .windowname &":"& .compname
+             LogMessage field(1), "", ""
+             On Error Resume next
+             
+             status = DDGWaitForGUIPropertyValue(.windowname, .compname, "Visible", True, field(5), "")
+              
+             if status <> 0 then
+                LogMessage "Error("& status &"):WaitForWebPage did not "& _
+                           "find object specified in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           WARNING_MESSAGE, .InputRecord
+                .statuscode = DDU_SCRIPT_WARNING
+             else
+                LogMessage "Web Page Loading should be completed.", "", ""
+                .statuscode = DDU_NO_SCRIPT_FAILURE
+             end if
+                     
+        Case SDWAIT_FOR_GUI
+        
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             if ((.windowname = "")OR(.compname="")) then
+                LogMessage "Missing required parameters in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           WARNING_MESSAGE, .InputRecord
+                .statuscode = DDU_SCRIPT_WARNING
+             else
+             
+                 field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+
+                 if field(5) = "" then field(5) = 15
+                 if Not IsNumeric(field(5)) then 
+                    field(5) = 15
+                    LogMessage "Invalid WaitForGUI timeout parameter.  Using default: 15", _
+                    WARNING_MESSAGE, .InputRecord
+                 end if
+            
+                 status = DDGWaitForGUI(.windowname, .compname, field(5)) 
+             
+                 if status <> 0 then
+                    LogMessage "Error("& status &"):WaitForGUI did not "& _
+                               "find object specified in table " & _
+                               .FileName & " at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                 else
+                    LogMessage .CompName & " found within timeout period.", "", ""
+                    .statuscode = DDU_NO_SCRIPT_FAILURE
+                 end if
+             End if
+             
+        Case SDWAIT_FOR_GUI_GONE
+        
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             if ((.windowname = "")OR(.compname="")) then
+                LogMessage "Missing required parameters in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           WARNING_MESSAGE, .InputRecord
+                .statuscode = DDU_SCRIPT_WARNING
+             else             
+                 field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+                 if field(5) = "" then field(5) = 15
+            
+                 status = DDGWaitForGUIGone(.windowname, .compname, field(5)) 
+             
+                 if status = 0 then
+                    LogMessage .CompName &" disappeared within timeout period.", "", ""
+                    .statuscode = DDU_NO_SCRIPT_FAILURE
+                    
+                 elseif status = 1 then
+                    LogMessage "WaitForGUIGone NEVER found object "& _
+                               "specified in table "& .FileName &" at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                    
+                 elseif status = -1 then
+                    LogMessage .CompName &" did NOT disappear within timeout period as "& _
+                               "specified in table "& .FileName &" at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                    
+                 else
+                    LogMessage "Error "& CStr(status) &" in WaitForGUIGone as "& _
+                               "specified in table "& .FileName &" at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                    
+                 end if
+             End if
+             
+        Case SDWAIT_FOR_PROPERTY_VALUE
+        
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+             field(6) = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+             
+             if ((.windowname = "")OR(.compname = "")) OR _ 
+                ((field(5) = "")OR(field(6) = "")) then
+                LogMessage "Missing required parameters in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           WARNING_MESSAGE, .InputRecord
+                .statuscode = DDU_SCRIPT_WARNING
+             else
+             
+                 field(7) = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+
+                 if field(7) = "" then field(7) = 15
+
+                 status = DDGWaitForGUIPropertyValue(.windowname, .compname, field(5), field(6), field(7), "") 
+             
+                 if status <> 0 then
+                    LogMessage "Error("& CStr(status) &"):WaitForPropertyValue did not "& _
+                               "find the object or value specified in table " & _
+                               .FileName & " at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                 else
+                    LogMessage .CompName &" Property "& field(5) &"="& field(6) &" found within timeout period.", "", ""
+                    .statuscode = DDU_NO_SCRIPT_FAILURE
+                 end if
+             End if
+
+        Case SDWAIT_FOR_PROPERTY_VALUE_GONE
+        
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+             field(6) = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+             
+             if ((.windowname = "")OR(.compname = "")) OR _ 
+                ((field(5) = "")OR(field(6) = "")) then
+                LogMessage "Missing required parameters in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           WARNING_MESSAGE, .InputRecord
+                .statuscode = DDU_SCRIPT_WARNING
+             else             
+                 field(7) = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+                 if field(7) = "" then field(7) = "15"
+            
+                 status = DDGWaitForGUIPropertyValueGone(.windowname, .compname, field(5), field(6), field(7)) 
+             
+                 if status = 0 then
+                    LogMessage .CompName &" Property '"& field(5) &"' value changed within timeout period.", "", ""
+                    .statuscode = DDU_NO_SCRIPT_FAILURE
+                    
+                 elseif status = 1 then
+                    LogMessage "WaitForPropertyValueGone NEVER found the object or value "& _
+                               "specified in table "& .FileName &" at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                    
+                 elseif status = -1 then
+                    LogMessage .CompName &" "& field(5) &" did NOT change within timeout period as "& _
+                               "specified in table "& .FileName &" at line " & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                    
+                 else
+                    LogMessage "Error "& CStr(status) &" in WaitForPropertyValueGone as "& _
+                               "specified in table "& .FileName &" at line" & .LineNumber, _
+                               WARNING_MESSAGE, .InputRecord
+                    .statuscode = DDU_SCRIPT_WARNING
+                    
+                 end if
+             End if
+             
+           
+        Case DDU_SET_FOCUS
+
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             if ((.windowname = "")OR(.compname="")) then
+                LogMessage "Missing required SETFOCUS parameters in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                DDEDriverCommand = .statuscode
+                exit function
+             end if
+             
+             if SDinitOTRDGUIIDVariables(.windowname, .compname) <> 0 then
+                SAFSDebug "Can't initialize the window and component object.", DEBUG_ERROR
+                DDEDriverCommand = .statuscode
+                exit function
+             end if
+             
+             Dim focused
+             'Firstly, try to set focus to the window object
+             focused = SetFocus(.windowGUIID)
+             
+             If Not focused Then
+                SAFSDebug "Fail to set focus to window object '"&.windowname&"'", DEBUG_WARN
+             End If                          
+             
+             'If the component is different from window, then set focus to the component object
+             If .windowname<>.compname Then
+                focused = SetFocus(.compGUIID)
+             End If
+
+             If focused Then
+                SAFSDebug "Success set focus to "& .windowname&":"&.CompName, DEBUG_DEBUG
+                LogMessage .windowname&":"&.CompName &" SETFOCUS successful.", PASSED_MESSAGE, ""
+                .statuscode = DDU_NO_SCRIPT_FAILURE
+             Else
+                LogMessage .windowname&":"&.CompName &" SETFOCUS fail. In table " & .FileName & _
+                           " at line " & .LineNumber, FAILED_MESSAGE, ""                
+             End If 
+        
+        Case DDU_SCROLLWHEEL
+
+             tempstring = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             if (tempstring="") then
+                LogMessage "Missing required NUMCLICKS parameter in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                DDEDriverCommand = .statuscode
+                exit function
+             end if
+             
+             itemp = 0
+             itemp = CInt(tempstring)
+             if(itemp = 0) then
+                LogMessage "Invalid ScrollWheel NUMCLICKS parameter in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                DDEDriverCommand = .statuscode
+                exit function
+             else
+                itemp = itemp * 120 'LLPlayer requires increments of 120
+             end if
+             
+             LLPlayer.MouseWheel itemp , 500 
+             LogMessage "ScrollWheel "& tempstring &" completed.", "", ""
+             .statuscode = DDU_NO_SCRIPT_FAILURE
+
+        Case DDU_SET_CONTEXT
+
+             .windowname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             .compname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+             if ((.windowname = "")OR(.compname="")) then
+                LogMessage "Missing required SETCONTEXT parameters in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                DDEDriverCommand = .statuscode
+                exit function
+             end if
+             
+             if SDinitOTRDGUIIDVariables(.windowname, .compname) <> 0 then
+                DDEDriverCommand = .statuscode
+                exit function
+             end if
+             
+             .windowGUIID.Activate
+             if (.windowname <> .compname) then .compGUIID.Activate
+             
+             LogMessage "SETCONTEXT attempted on "& .WindowName &":"& .CompName, "", ""
+             .statuscode = DDU_NO_SCRIPT_FAILURE
+
+        Case DDC_GET_DELTA_DATE_COMMAND
+            Dim delta
+            Dim initialdate
+            Dim deltadate
+            Dim deltadatestring
+            
+            field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+            field(4) = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+            field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+            if field(3) = "" then
+                LogMessage "Missing source Date string for "& DriverCMD &" in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                           
+            elseif(NOT isDate(field(3))) then
+                LogMessage "Invalid source Date string for "& DriverCMD &" in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                           
+            elseif field(4) = "" then
+                LogMessage "Missing delta days value for "& DriverCMD &" in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                           
+            elseif(NOT isNumeric(field(4))) then
+                LogMessage "Invalid delta days string for "& DriverCMD &" in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                           
+            elseif field(5) = "" then
+                LogMessage "Missing results variable name for "& DriverCMD &" in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord                           
+            else
+                On Error Resume Next
+                if Left(field(5), 1) = "^" then field(5) = Mid(field(5), 2) end if
+                DDVSetVariableValue field(5), ""     'remove any previous value of variable
+                deltadate=DateValue(field(3)) + field(4)
+                deltadatestring=FormatDateTime(deltadate, 2) 'Format to ShortDate format
+                DDVSetVariableValue field(5), deltadatestring
+                .statuscode = DDU_NO_SCRIPT_FAILURE
+                'log the test success
+                LogMessage DriverCMD &" new date '" & deltadatestring & _
+                       "' assigned to variable '"& field(5) &"'.", _
+                       GENERIC_MESSAGE, ""
+            end if
+ 
+' Carl Nagle removing as this command did NOT work until STAFUtilities was fixed July 2013.
+' After fixing STAFUtilities, it is deemed better to NOT perform a full SAFSVARS reset,
+' but to rely on the SAFSDRIVER DCDriverMiscCommands ClearAllVariables implementation instead.
+' DCDriverMiscCommands ClearAllVariables restores most SAFS variables that are not part of 
+' a user-defined test.
+'                       
+'        Case DDU_CLEAR_VARIABLES
+'        
+'            DDVClearAllVariables
+'            LogMessage DriverCMD  &" performed.", "", ""
+'            .statuscode = DDU_NO_SCRIPT_FAILURE
+        
+        Case DDU_CAPTURE_MOUSE_POS_ON_SCREEN
+            
+            field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)  'x var
+            field(4) = GetTrimmedQuotedField(.inputrecord, 4, .separator)  'y var
+            If field(3) = "" Then
+                LogMessage DriverCMD &": Missing required xVar variable name in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                Exit Function
+            ElseIf field(4) = "" Then
+                LogMessage DriverCMD &": Missing required yVar variable name in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+                Exit Function
+            Else
+                Dim d, xpos, ypos
+                xpos = Sys.Desktop.MouseX
+                ypos = Sys.Desktop.MouseY
+                
+                if InStr("=", field(3)) Then
+                    field(3) = GetTrimmedQuotedField(field(3), 2, "=")  'x var  
+                    field(4) = GetTrimmedQuotedField(field(4), 2, "=")  'y var 
+                End If
+                DDVSetVariableValue field(3), xpos
+                DDVSetVariableValue field(4), ypos
+                LogMessage DriverCMD & " " & field(3) & "=" & xpos & "; " & _
+                                             field(4) & "=" & ypos & " successful.", _
+                           PASSED_MESSAGE, ""  
+                .statuscode = DDU_NO_SCRIPT_FAILURE    
+            End if
+
+        Case SDHIGHLIGHT_COMPONENT 
+            temp = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+            highLightComponent = ConvertBool(temp)
+            
+            If highLightComponent Then
+                LogMessage DriverCMD &" is ON.", PASSED_MESSAGE, ""
+            Else
+                LogMessage DriverCMD &" is OFF.", PASSED_MESSAGE, ""            
+            End If
+
+            .statuscode = DDU_NO_SCRIPT_FAILURE
+        Case Else
+
+            .statuscode = DDU_SCRIPT_NOT_EXECUTED
+            
+        End Select
+      
+        if .statuscode = DDU_SCRIPT_NOT_EXECUTED then _            
+        .statuscode = DDEDriverCounterCommand (DriverCMD, statusInfo)
+
+        if .statuscode = DDU_SCRIPT_NOT_EXECUTED then _            
+        .statuscode = DDDriverFlowCommand (DriverCMD, statusInfo)
+                      
+        if .statuscode = DDU_SCRIPT_NOT_EXECUTED then _            
+        .statuscode = DDDriverDeprecatedCommand(DriverCMD, statusInfo)
+
+        'IMPLICIT CHECK FOR CUSTOM COMMANDS
+        if .statuscode = DDU_SCRIPT_NOT_EXECUTED then _            
+        .statuscode = CustomDDEDriverCommand (DriverCMD, statusInfo)
+        
+        DDEDriverCommand = .statuscode            
+        
+  End With     
+    
+End Function
+
+
+'############################################################################
+'# DESCRIPTION:
+'#      According to the application's handle, use the native API to set focus to it.
+'# PARAMETERS:
+'#      handle    -   the application's handle
+'# ERRORS:
+'#      none
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#      SEP 19, 2006    Original Release
+'#      NOV 24, 2011    (Lei Wang) Find this CAN'T work in TestComplete 8.6 and Windows 7
+'#      SEP 29, 2013    (Lei Wang) Modify to make it work in TestComplete 9.3 and Windows 7
+'#
+'############################################################################
+Function SetFoucusByNativeAPI(handle)
+    On Error Resume Next
+    SetFoucusByNativeAPI = False         
+    If handle = 0 Then
+        SAFSDebug "Process handle should not be 0, Can't set focus to it.", DEBUG_WARN
+    Else
+        Dim Def_DLL, success
+        Set Def_DLL = DLL.DefineDLL("user32")
+        call Def_Dll.DefineProc("SetForegroundWindow",vt_variant, vt_variant)
+        'After we DefineProc "SetForegroundWindow", we can use it as a normal fucntion
+        success = SetForegroundWindow(handle)
+
+        If (Err.Number<>0) or (Not success) Then
+            SAFSDebug "Can't set focus to window by native function SetForegroundWindow.", DEBUG_WARN
+        Else
+            SetFoucusByNativeAPI = True
+        End If
+    End If
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Set focus to an object.
+'# PARAMETERS:
+'#      componet    A test complete test object. It can be window or component.
+'# ERRORS:
+'#      none
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#      SEP 19, 2006    Original Release
+'#      SEP 30, 2013    (Lei Wang) Move codes out from Function DDEDriverCommand, combine codes for setting
+'#                               focus to window and component
+'#
+'############################################################################
+Function SetFocus(componet)
+  Dim focused, errCount
+    
+  On Error Resume Next
+  focused = False
+  
+  'Firstly, try the TestComplete API to set focus to object
+  'Activate() is used for most Window object; for non-window object, bypass
+  If aqObject.IsSupported(componet, "Activate") Then
+     SAFSDebug "Use TC Action Activate to set focus.", DEBUG_DEBUG
+     Err.Clear
+     errCount = Log.ErrCount
+     componet.Activate
+     If errCount=Log.ErrCount And Err.Number=0 Then
+        focused = True
+     End If
+  'SetFocus() is used for most Window object and for some non-window objects
+  ElseIf aqObject.IsSupported(componet, "SetFocus") Then
+     SAFSDebug "Use TC Action SetFocus to set focus.", DEBUG_DEBUG
+     Err.Clear
+     errCount = Log.ErrCount
+     componet.SetFocus
+     If errCount=Log.ErrCount And Err.Number=0 Then
+        focused = True
+     End If
+  'Try the domain specific native function to set focus
+  Else
+    'For flex object, use focusManager to set focus
+    If aqObject.IsSupported(componet, "FlexObject") Then
+      SAFSDebug "Use Flex focusManager to set focus.", DEBUG_DEBUG
+      Err.Clear
+      errCount = Log.ErrCount
+      componet.FlexObject.focusManager.setFocus(componet.FlexObject)
+      componet.FlexObject.focusManager.showFocus()
+      If errCount=Log.ErrCount And Err.Number=0 Then
+        focused = True
+      End If
+    'For .NET object, use navite function Focus() to set focus
+    ElseIf aqObject.IsSupported(componet, "Focus") Then
+      SAFSDebug "Use .NET native function Focus() to set focus.", DEBUG_DEBUG
+      Err.Clear
+      errCount = Log.ErrCount
+      componet.Focus
+      If errCount=Log.ErrCount And Err.Number=0 Then
+        focused = True
+      End If
+    Else
+      SAFSDebug "Need more implementations to set focus by domain native methods.", DEBUG_DEBUG
+    End If
+  End If
+                
+  'If component is not focused, then try window's native method "SetFoucusByNativeAPI" to set focus
+  If Not focused Then
+    SAFSDebug "Try to set focus by window native function.", DEBUG_DEBUG
+    
+    If IsSupported(componet, "Handle") Then
+      focused = SetFoucusByNativeAPI(componet.Handle)
+    End If
+    If (Not focused) And IsSupported(componet, "HWND") Then
+      focused = SetFoucusByNativeAPI(componet.HWND)
+    End If
+    
+    If Not focused Then
+      SAFSDebug "Can't set focus by window native function SetFoucusByNativeAPI.", DEBUG_WARN
+    End If
+  End If
+  
+  If Not focused Then
+    SAFSDebug "Fail to set focus!", DEBUG_DEBUG
+  End If
+  SetFocus = focused
+End Function

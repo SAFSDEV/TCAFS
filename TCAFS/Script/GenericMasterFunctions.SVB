@@ -1,0 +1,3975 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    GenericMasterFunctions.SBL  SOURCECODE
+'#                                                                         
+'#    NOTE:  When adding routines update exports in GenericMasterFunctions.SBH      
+'#
+'#
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on most objects in Data-Driven Automation.
+'#
+'#      Since POPUP menus for ALL component types are handled generically by the 
+'#      operating system they are also handled here.
+'#
+'#      These routines are not normally called by a user or developer but instead
+'#      are called by the various Component Scripts performing tests based on a
+'#      data table being processed by the StepDriver.  When that script needs 
+'#      no special processing of a particular ACTION COMMAND it can call these 
+'#      generic routines to perform the job.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#      VerifyProperty          'Verify a single property value
+'#      VerifyPropertyToFile    'Verify a large string property value with a file benchmark
+'#      VerifyClipboardToFile   'Verify clipboard contents with a file benchmark
+'#      VerifyClipboardVP       'Perform a Robot ClipboardVP on clipboard contents
+'#      GUIDoesExist            'Test for the visual existence of a Window or Component
+'#      GUIDoesNotExist         'Test for the visual non-existence of a Window or Component
+'#      AssignPropertyVariable  'Assign a property value to a specific DDVariable
+'#      InputKeys               'Send text to the specified component
+'#      VerifyTabOrder          'Verifies the Tab Order of child components
+'#      GetGUIImage             'Save the screen shot of a component to a bmp or jpg file
+'#      VerifyGUIImageToFile    'Verify the screen shot of a component with a benchmark bmp or jpg file
+'#      CapturePropertyToFile   'Capture a large string property value to a file
+'#
+'# This library is defined by:
+'#
+'# GenericMasterFunctions_X    Constants, Globals, Types etc.
+'# GenericMasterFunctions      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#      JUL 01, 2010    (Carl Nagle) Update to support SAFS Debug and InputKeys
+'#      MAR 18, 2011    (Carl Nagle) Accept standard SAFS InputKeys Syntax
+'#	    MAR 29, 2011	  (EITAHT) Added GenericGetGUIImage and 
+'#                               GenericVerifyGUIImageToFile
+'#      SEP 16, 2011    (Lei Wang) Added CapturePropertyToFile and Update VerifyPropertyToFile
+'#      SEP 22, 2011    (Lei Wang) Added method GenericHoverMouse() and GenericLocateScreenImage()
+'#      SEP 26, 2011    (Lei Wang) Added method GenericIsPropertyExist() and GenericCapturePropertiesToFile()
+'#      SEP 30, 2011    (Lei Wang) Modify method GenericVerifyProperty(), add GenericVerifyFileToFile()
+'#      OCT 11, 2011    (Lei Wang) Modify method GenericVerifyProperty(),GenericVerifyClipboardToFile()
+'#                               add GenericVerifyValues()
+'#      APR 23, 2012   (JunwuMa) Support CaptureObjectDataToFile for ListView and TabControl in .Net.
+'#      SEP 27, 2013    (Lei Wang) Remove original sub GenericCaptureObjectDataToFile and rename CaptureObjectDataToFile to GenericCaptureObjectDataToFile
+'#
+'##############################################################################
+
+'# PUBLIC DEPENDENCIES
+
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT CheckBoxFunctions
+'USEUNIT ComboBoxFunctions
+'USEUNIT ComboEditBoxFunctions
+'USEUNIT CustomDriverCommands
+'USEUNIT CustomDriverCommands_X
+'USEUNIT CustomLogUtilities
+'USEUNIT CustomLogUtilities_X
+'USEUNIT CustomRecordTypes
+'USEUNIT CustomRecordTypes_X
+'USEUNIT CustomStatusUtilities
+'USEUNIT CustomStatusUtilities_X
+'USEUNIT CustomTestCommands
+'USEUNIT CustomTestCommands_X
+'USEUNIT CustomUtilities
+'USEUNIT CustomUtilities_X
+'USEUNIT DDDriverCommands
+'USEUNIT DDGUIUtilities
+'USEUNIT DDGUIUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT DDUtilities
+'USEUNIT DDVariableStore
+'USEUNIT EditBoxFunctions
+'USEUNIT FileUtilities
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT GenericObjectFunctions
+'USEUNIT GraphicControlFunctions
+'USEUNIT GroupBoxFunctions
+'USEUNIT HTMLDocumentFunctions
+'USEUNIT HTMLFunctions
+'USEUNIT HTMLImageFunctions
+'USEUNIT HTMLLinkFunctions
+'USEUNIT HTMLTableFunctions
+'USEUNIT ImageUtilities
+'USEUNIT ImageUtilities_X
+'USEUNIT LabelFunctions
+'USEUNIT ListBoxFunctions
+'USEUNIT ListViewFunctions
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT MenuUtilities
+'USEUNIT MenuUtilities_X
+'USEUNIT PopupMenuFunctions
+'USEUNIT PushButtonFunctions
+'USEUNIT RadioButtonFunctions
+'USEUNIT SSTreeFunctions
+'USEUNIT ScrollBarFunctions
+'USEUNIT StepDriver
+'USEUNIT StepDriver_X
+'USEUNIT StringUtilities
+'USEUNIT TabControlFunctions
+'USEUNIT ToolBarFunctions
+'USEUNIT TreeViewFunctions
+'USEUNIT TreeViewFunctions_X
+'USEUNIT V2003Functions
+'USEUNIT VSFlexGridFunctions
+'USEUNIT WindowFunctions
+'USEUNIT FlexUtilities
+'USEUNIT NTCommandUtilities
+'USEUNIT NetDataGrid
+'USEUNIT NetMenuBar
+'USEUNIT FlexMenuBar
+
+'# FORWARD DECLARATIONS
+
+'############################################################################
+'#
+'#   Sub GenericVerifyProperty ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the value of a property as a String.  The expected 
+'#      value is processed via <a href="StringUtilities.htm#GetTrimmedQuotedString">GetTrimmedQuotedString</a>.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'# INPUT PARAMETERS (from the calling module):
+'#
+'#      contains    If this is true, code will verify if the property's value contains the expected string.
+'#                  Else, code will verify if the property's vlaue equals the expected string.
+'#          
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Case-sensitive name of the object property to verify
+'#       6      the expected string value to get from the property
+'#       7      Boolean param, isCaseSensitive, if comparaison is case sensitive
+'#              the default value is False
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006                Original Release
+'#      OCT 11, 2011    (Lei Wang)    Modify to support keyword VerifyPropertyContains
+'#      JUL 30, 2012    (Lei Wang)    Update to support keyword InputCharacters
+'#      AUG 14, 2012    (Lei Wang)    Fix test path problem for keyword CapturePropertyToFile/CapturePropertiesToFile   
+'#
+'############################################################################
+Sub GenericVerifyProperty(contains)
+
+    Dim status
+    Dim myproperty
+    Dim expected
+    Dim caseSensitive
+    Dim value
+    Dim count
+    Dim compareOk
+    Dim compareMessage
+        
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        'get and check for a non-blank property name
+        myproperty = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if myproperty = "" then
+            LogMessage "No PROPERTY specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .CompName 
+            exit sub
+        end if
+        
+        'get expected value (this may be blank)
+        expected = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        
+        'get the optional parameter caseInsensitive
+        caseSensitive = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        caseSensitive = ConvertBool(caseSensitive)
+        
+        .windowGUIID.Activate
+
+        'get status and value of our property
+        status = DDGGetGUIPropertyString(.compGUIID, myproperty, value)
+           
+        if status <> 0 then
+            LogMessage "TestComplete Error "& CStr(status) &" performing "& .TestCommand & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& .CompName 
+            exit sub
+        end if
+    
+        'compare value to expected value and log failure if so
+        compareOk = false
+        compareMessage = ""
+        If contains Then
+            If caseSensitive Then
+                compareMessage = "contain case-sensitively"
+                compareOk = StringContains(value, expected)
+            Else
+                compareMessage = "contain case-insensitively"
+                compareOk = StringContainsIgnoreCase(value, expected)
+            End If       
+        Else
+            If caseSensitive Then
+                compareMessage = "match case-sensitively"
+                compareOk = StringEqual(value, expected)
+            Else
+                compareMessage = "match case-insensitively"
+                compareOk = StringEqualIgnoreCase(value, expected)
+            End If       
+        End if
+
+        if Not compareOk then
+            LogMessage .testcommand & " failed for " & .CompName &": value of property '"& myproperty & _
+                       "' did not "  & compareMessage & " expected result:'"& expected & _
+                       "' in table "& .FileName &" at line "& .LineNumber, FAILED_MESSAGE, _
+                       "Expected="& expected &", Actual="& value &"."
+            exit sub
+        end if
+        
+        'log the test success
+        LogMessage .testcommand & " succeeds. For " & .CompName &": value of property '"&_
+                   myproperty &"' " & compareMessage & " expected result:"& expected &".",_
+                   PASSED_MESSAGE, _
+                   "Expected="& expected &", Actual="& value &"."
+        
+        .statuscode = SDNoScriptFailure
+        
+    End With
+
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericSetPropertyValue ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to set a value of the property as a String.  The expected 
+'#      value is processed via <a href="StringUtilities.htm#GetTrimmedQuotedString">GetTrimmedQuotedString</a>.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Case-sensitive name of the object property to set
+'#       6      the expected string value for the property
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel
+'# Orig   Date: AUG 26, 2011
+'# History:
+'#
+'#      AUG 26, 2011    Original Release
+'#
+'############################################################################
+Sub GenericSetPropertyValue()
+
+    Dim status
+    Dim myproperty
+    Dim value
+    Dim count
+        
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        'get and check for a non-blank property name
+        myproperty = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if myproperty = "" then
+            LogMessage "No PROPERTY specified for set in table "& _
+                       .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .CompName 
+            exit sub
+        end if
+        
+        'get expected value (this may be blank)
+        value = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        
+        .windowGUIID.Activate
+
+        'get status and value of our property
+        status = DDGSetGUIProperty (.compGUIID, myproperty, value)
+                  
+        if status <> 0 then
+            LogMessage "TestComplete Error "& CStr(status) &" performing SetPropertyValue "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& .CompName 
+            exit sub
+        end if
+    
+        'log the test success
+        LogMessage .CompName &":"& myproperty &" property set to:"& _
+                   value &".", PASSED_MESSAGE, ""
+        
+        .statuscode = SDNoScriptFailure
+        
+    End With
+
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericAssignPropertyVariable ()
+'#
+'############################################################################
+Sub GenericAssignPropertyVariable()
+
+    Dim status
+    Dim myproperty
+    Dim variable
+    Dim value
+    Dim suppressfield
+    Dim suppress
+    Dim count
+        
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        'get and check for a non-blank property name
+        myproperty = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if myproperty = "" then
+            LogMessage "No PROPERTY specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .CompName
+            exit sub
+        end if
+        
+        'get variablename value 
+        variable = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if variable = "" then
+            LogMessage "No VARIABLE specified for "& .TestTable() &" in table "& _
+                       .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       "Could not perform "& .TestTable() &" on object "& _
+                       .CompName 
+            exit sub
+        end if
+
+        suppress = false
+        'get optional suppress value 
+        suppressfield = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        if AQString.GetLength(suppressfield) > 0 then
+            if AQString.ToUpper(suppressfield) = "SUPPRESSVALUE" then
+                suppress = true
+            end if
+        end if
+
+        'remove any leading caret symbol from variable name
+        if Left(variable,1) = "^" then variable = Mid(variable, 2)        
+
+        'remove any previous value of variable
+        DDVSetVariableValue variable, ""
+         
+        .windowGUIID.Activate               
+        
+        'get status and value of our property
+        status = DDGGetGUIPropertyString(.compGUIID, myproperty, value)
+           
+        if status <> 0 then
+            LogMessage "TestComplete Error "& CStr(status) &" performing "& .testcommand & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, CStr(status) 
+            exit sub
+        end if
+    
+        'remove any previous value of variable
+        DDVSetVariableValue variable, value
+                                
+        'log the test success
+        if suppress then
+          LogMessage .CompName &" Property """& myproperty &""" value "& _
+                     "was assigned to variable """& variable &""".", _
+                     PASSED_MESSAGE, ""        
+          .statuscode = SDNoScriptFailure        
+        else
+          LogMessage .CompName &" Property """& myproperty &""" with value """& CStr(value) &""" "& _
+                     "was assigned to variable """& variable &""".", _
+                     PASSED_MESSAGE, ""        
+          .statuscode = SDNoScriptFailure
+        end if
+        
+    End With
+
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericGUIDoesExist ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the existence of a particular window and/or component.
+'#      If the window(Field 2) and component(Field 3) are the same then we only 
+'#      check for the existence of the window.  However, if the component is 
+'#      actually a child of the window then we first check for the window and 
+'#      then check for the component.
+'#
+'#      If a Window or Component is HIDDEN, it will be treated as if it Does NOT Exist.
+'#      The item must be VISIBLE to pass.
+'#
+'#      Examples:
+'#
+'#          T, AWindow, AWindow, GUIDoesExist
+'#
+'#          T, AWindow, AChild, GUIDoesExist
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#      JUN 12, 2012    (Lei Wang) Call function DDGGetObjectByRec() of DDGUIUtilities.SVB to get winobj and compobj.
+'#
+'############################################################################
+Sub GenericGUIDoesExist()
+
+    Dim status
+    Dim value
+    Dim WVis
+    Dim CVis
+    Dim winrecstr, windowObj
+    Dim comprecstr, compObj    
+    with otrd
+    
+        On Error Resume Next
+        .statuscode = SDGeneralScriptFailure
+
+        winrecstr = DDGGetGUIID(.windowname, .windowname, .AppMapName)
+        SAFSDebug .testcommand &" retrieved window recognition string: "& winrecstr, DEBUG_INFO
+        Set windowObj = DDGGetObjectByRec(winrecstr, winrecstr)
+        otrd.setWinGUIID(windowObj)
+          
+        if(Not(IsObject(.windowGUIID))) OR (TypeName(.windowGUIID) = "Nothing") then
+            LogMessage .TestCommand &" did not find "& .windowName &" as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .windowName &" was not found on screen!"
+            exit sub
+        end if
+              
+        status = DDGWaitForSQAObject(.windowGUIID, 1)
+        
+        if status <> 0 then
+            LogMessage .TestCommand &" did not find valid "& .windowName &" as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .windowName &" was not found on screen!"
+            exit sub
+        end if
+
+        'window was found
+        DDGGetGUIPropertyString .windowGUIID, "Visible", value
+        WVis = UCASE(value)
+
+        if WVis = "FALSE" then
+            LogMessage .TestCommand &" did not find "& .windowName &" VISIBLE as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .windowName &" was not VISIBLE on screen!"
+            Exit Sub
+        end if
+        
+        if UCASE(.windowname) = UCASE(.compname) then
+            LogMessage .WindowName &" DOES EXIST as expected.", PASSED_MESSAGE, ""        
+            .statuscode = SDNoScriptFailure
+            Exit Sub
+        end if
+
+        'some domains don't support Activate for Window
+        .windowGUIID.Activate            
+
+        comprecstr = DDGGetGUIID(.windowname, .compname, .AppMapName)
+        SAFSDebug .testcommand &" retrieved component recognition string: "& comprecstr, DEBUG_INFO
+        Set compObj = DDGGetObjectByRec(winrecstr, comprecstr)
+        otrd.setCompGUIID(compObj)           
+
+        if(Not(IsObject(.compGUIID))) OR (TypeName(.compGUIID) = "Nothing") then
+            LogMessage .TestCommand &" did not find "& .compName &" as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .WindowName &" exists, but "& .compName &" was not found!"
+            exit sub
+        end if              
+
+        status = DDGWaitForSQAObject(.compGUIID, 1)
+        
+        if status <> 0 then
+            LogMessage .TestCommand &" did not find "& .CompName &" as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .WindowName &" exists, but "& .CompName &" was not found on screen!"
+            exit sub
+        end if
+
+        'component was found
+        value = ""
+        DDGGetGUIPropertyString .compGUIID, "Visible", value
+        CVis = UCASE(value)
+
+        if CVis = "FALSE" then
+            LogMessage .TestCommand &" did not find "& .CompName &" VISIBLE as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .CompName &" was not VISIBLE on screen!"
+        else
+            LogMessage .CompName &" DOES EXIST as expected.", PASSED_MESSAGE, ""        
+            .statuscode = SDNoScriptFailure
+        end if
+                    
+    End With
+
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericGUIDoesNotExist ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the non-existence of a particular window or component.
+'#      If the window(Field 2) and component(Field 3) are the same then we only 
+'#      check for the non-existence of the window.  However, if the component is 
+'#      actually a child of the window then we first check for the existence 
+'#      of the window and then check for the non-existence of the component.
+'#
+'#      An error will be reported if we are looking for the non-existence of 
+'#      a child component, and the window is not found to exist.
+'#
+'#      If a Window or Component has simply become HIDDEN, it will be treated
+'#      as if it Does NOT Exist.
+'#
+'#      Examples:
+'#
+'#          T, AWindow, AWindow, GUIDoesNotExist
+'#
+'#          T, AWindow, AChild, GUIDoesNotExist
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#      JUN 12, 2012    (Lei Wang) Call function DDGGetObjectByRec() of DDGUIUtilities.SVB to get winobj and compobj.
+'#
+'############################################################################
+Sub GenericGUIDoesNotExist()
+
+    Dim status
+    Dim value
+    Dim WVis
+    Dim CVis
+    Dim winrecstr, windowObj
+    Dim comprecstr, compObj     
+        
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        On Error Resume Next
+        winrecstr = DDGGetGUIID(.windowname, .windowname, .AppMapName)
+        SAFSDebug .testcommand &" retrieved window recognition string: "& winrecstr, DEBUG_INFO
+        Set windowObj = DDGGetObjectByRec(winrecstr, winrecstr)
+        otrd.setWinGUIID(windowObj)           
+
+        if(Not(IsObject(.windowGUIID))) OR (TypeName(.windowGUIID) = "Nothing") then
+            'if we are looking for window DoesNotExist then we passed
+            if UCASE(.windowname) =  UCASE(.compname) then
+                LogMessage .WindowName &" DOES NOT EXIST as expected.", PASSED_MESSAGE, ""       
+                .statuscode = SDNoScriptFailure
+                Exit Sub
+
+            'if we are looking for child DoesNotExist then this is an error
+            else
+                LogMessage .TestCommand &" did not find "& .WindowName &" as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .WindowName &" was not found on screen!"
+                exit sub
+            end if
+        end if
+              
+        status = DDGWaitForSQAObject(.windowGUIID, 1)
+        
+        'if window not found due to normal timeout
+        if status <> 0 then 
+            'if we are looking for window DoesNotExist then we passed
+            if UCASE(.windowname) =  UCASE(.compname) then
+                LogMessage .WindowName &" DOES NOT EXIST as expected.", PASSED_MESSAGE, ""       
+                .statuscode = SDNoScriptFailure
+                Exit Sub
+
+            'if we are looking for child DoesNotExist then this is an error
+            else
+                LogMessage .TestCommand &" did not find "& .WindowName &" as expected "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .WindowName &" was not found on screen!"
+                exit sub
+            end if
+        end if
+
+        'must deal with hidden windows            
+        DDGGetGUIPropertyString .windowGUIID, "Visible", value
+        WVis = UCASE(value)
+
+        'if we are looking for the window DoesNotExist then this is a failure
+        if UCASE(.windowname) =  UCASE(.compname) then
+            if WVis = "FALSE" then       
+                LogMessage .WindowName &" DOES NOT EXIST (is not VISIBLE) as expected.", PASSED_MESSAGE, ""        
+                .statuscode = SDNoScriptFailure
+            Else
+                LogMessage .TestCommand &" unexpectedly found "& .WindowName() &" to exist! Failure "& _
+                   "in table "& .FileName &" at line "& _
+                   .LineNumber, _
+                   FAILED_MESSAGE, _
+                   .WindowName &" was unexpectedly found to exist!"
+            end if
+            exit sub
+        end if
+
+        'if we are looking for child DoesNotExist then continue
+        if WVis = "FALSE" then       
+            LogMessage .TestCommand &" did not find "& .WindowName &" as expected "& _
+               "in table "& .FileName &" at line "& _
+               .LineNumber, _
+               FAILED_MESSAGE, _
+               .WindowName &" was not VISIBLE on screen!"
+            exit sub
+        end if
+
+        'some domains cannot Activate a window
+        .windowGUIID.Activate
+
+        comprecstr = DDGGetGUIID(.windowname, .compname, .AppMapName)
+        SAFSDebug .testcommand &" retrieved component recognition string: "& comprecstr, DEBUG_INFO 
+        Set compObj = DDGGetObjectByRec(winrecstr, comprecstr)
+        otrd.setCompGUIID(compObj)           
+
+        if(Not(IsObject(.compGUIID))) OR (TypeName(.compGUIID) = "Nothing") then
+            LogMessage .compName &" DOES NOT EXIST as expected.", PASSED_MESSAGE, ""       
+            .statuscode = SDNoScriptFailure
+            Exit Sub
+        end if
+
+        'if exists but not visible, that is OK              
+        status = DDGWaitForSQAObject(.compGUIID, 1)
+                
+        'child was not found
+        if status <> 0 then 
+            'if we are looking for child DoesNotExist then we passed
+            LogMessage .CompName &" DOES NOT EXIST as expected.", PASSED_MESSAGE, ""        
+            .statuscode = SDNoScriptFailure
+            Exit Sub
+                
+        'child was found, but is it visible
+        else                     
+            'must deal with hidden children            
+            value = ""
+            DDGGetGUIPropertyString .compGUIID, "Visible", value
+            CVis = UCASE(value)
+                    
+            if CVis = "FALSE" then
+                'if we are looking for child DoesNotExist then we passed
+                LogMessage .CompName &" DOES NOT EXIST (is not VISIBLE) as expected.", PASSED_MESSAGE, ""        
+                .statuscode = SDNoScriptFailure
+                Exit Sub
+            end if
+
+            LogMessage .TestCommand &" unexpectedly found "& .CompName &" to exist! Failure "& _
+                   "in table "& .FileName &" at line "& _
+                   .LineNumber, _
+                   FAILED_MESSAGE, _
+                   .CompName &" was unexpectedly found to exist!"
+            exit sub                
+        end if                
+            
+    End With
+
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericVerifyArrayProperty ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the values of an array property.
+'#      (This routine has not yet been implemented.)
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      TBD
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyArrayProperty()
+
+    GenericUnimplementedCommand
+
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericVerifyMenuStructure(hMenu As Long)
+'#
+'# DESCRIPTION:
+'#
+'#      Given a menu handle the routine outputs the full structure 
+'#      with status to a file.  It then compares that file with the specified 
+'#      benchmark file and sets pass/fail conditions for the test.
+'#      This routine was primarily developed for testing Popup menus, but
+'#      standard menus can also be processed here.
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the additional 
+'#      information it needs to perform its function .
+'#
+'# INPUT PARAMETERS (from the calling module):
+'#
+'#      hMenu   The handle to the menu to validate.  This will be provided
+'#              by other routines that retrieve this handle prior to this call.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      name.ext of benchmark file on repositiory's Datapool\Bench directory
+'#      [6]     Optional expected descriptive text at start of file (first line of bench).
+'#              (If bench has this descriptive text this field is REQUIRED to pass.)
+'#      [7]     optional name.ext to give current structure in repository's 
+'#              Datapool\Test directory for compare with benchmark.
+'#              If no name is given then the bench name is used.
+'#      [8]     optional name.ext to store difference information in repository's Datapool\Dif.
+'#              If no name is given then the bench name is used.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyMenuStructure(hMenu)
+
+'$NoCStrings
+
+    Dim status
+    Dim MyProject
+    Dim BenchIN
+    Dim Bench
+    Dim Test
+    Dim Dif
+    Dim Desc
+
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate bench file specification
+        BenchIN = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if BenchIN = "" then 
+            LogMessage .TestCommand &" missing required Benchmark filename "& _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+    
+        MyProject = Project.Path 
+        Bench = MyProject &"Datapool\Bench\"& BenchIN
+        
+        'make sure specified bench file actually exists
+        Log.Enabled = False
+        status = Utilities.Exists(Bench)
+        Log.Enabled = True
+        if status <> True then
+            LogMessage .TestCommand &" invalid Benchmark filename "& _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+         'get the Descriptive header (if any) to be used
+        Desc = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+
+        'get the Test output filename. apply default if not given
+        Test = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        if Test = "" then Test = BenchIN
+        
+        Test = MyProject &"Datapool\Test\"& Test
+        
+        'get the Dif output filename and exit if not given
+        Dif = GetTrimmedQuotedField(.inputrecord, 8, .separator)
+        if Dif = "" then Dif = BenchIN
+        
+        Dif = MyProject &"Datapool\Dif\"& Dif
+
+        'perform menu structure capture
+        if Desc = "" then
+            status = MUOutputMenuHandleStructure (hMenu, Test, 1, 1, 1)
+        else
+            status = MUOutputMenuHandleStructure (hMenu, Test, 1, 1, 1, Desc)
+        end if
+        
+        'error:invalid parameters provided
+        if status < -1 then
+            LogMessage .TestRecord &" failure. Invalid parameters provided or "& _
+                       "Repository Datapool error"& _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+        'error:IO failure with SQA
+        if status > 0 then
+            .statuscode = SDInvalidFileIO
+            LogMessage .TestReecord() &" failure. TestComplete IO problem"& CStr(status) &" "& _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+        'menu capture apparently succeeded so continue
+        status = Run_NTFileComp_EXE (Bench, Test, Dif, " /L /N ", 5)
+        
+        'if filecomp did not occur
+        if status <> 0 then
+            LogMessage .TestCommand &" with NTCommandUtilities failed (probably did not occur). "& _
+                       "See table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+        'see if the dif found errors
+        status = NTFileCompResult( Dif )
+        
+        'general error
+        if status = -1 then
+            LogMessage .TestCommand &" compare failed. "& _
+                       Dif &" processing failed.  "& _
+                       "See table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       Dif &" processing by NTFileCompResult routine failed."
+            exit sub
+        end if
+        
+        'differences found
+        if status = 1 then
+            LogMessage .TestCommand &" compare failed. "& _
+                       "Differences were found.  "& _
+                       "See table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       Dif &" processing by NTFileCompResult found differences."
+            exit sub
+        end if
+        
+        'files match
+        if status = 0 then
+            .statuscode = SDNoScriptFailure
+            LogMessage .TestCommand &" compare matched expected result:"& Bench, _
+                       PASSED_MESSAGE, ""
+        end if
+        
+    End With
+    
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericVerifyMenuItem(hMenu As Long, Optional match)
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to verify the state information of a particular text string 
+'#      menuitem in the given menu.  The menuitem should be specified in the form 
+'#      "Menu->Menu->MenuItem   CTRL+V" with the full text (ampersands optional), 
+'#      spaces(if any), and keyboard shortcut text (if any).  
+'#      (The ampersands precede any character in the menuitem that is underlined.)
+'#
+'#      If the optional "match" parameter is provided then partial text matches 
+'#      are enabled at each level of the menu hierarchy.  This is only available from 
+'#      external function calls (WindowFunctions).  You cannot specify the use 
+'#      of partial text matches from within the text table record other than by 
+'#      using the appropriate ACTION COMMAND.
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the additional 
+'#      information it needs to perform its function .
+'#
+'# INPUT PARAMETERS (from the calling module):
+'#
+'#      hMenu   The handle to the menu to use.  This will be provided
+'#              by other routines that retrieve this handle prior to this call.
+'#      
+'#      match   Optional: set to 1 to enable partial text matches of menuItem text.
+'#      
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Menu->MenuItem hierarchy string to identify which menuitem to test.
+'#              This menu hierarchy IS case-sensitive
+'#
+'#       6      Expected status string (or part thereof) to verify.  
+'#              Ex: "Enabled Checked"         OR  "Disabled Grayed"    etc.
+'#              Each item separated by a space will be evaluated separately so 
+'#              the order of the status items does not matter.  
+'#              These status items ARE case-sensitive. 
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyMenuItem(hMenu, match)
+
+    Dim status
+    Dim menuitem
+    Dim testState
+    Dim menuState
+    Dim info
+    Set info = New MenuInfo
+    
+    with otrd
+    
+       .statuscode = SDGeneralScriptFailure
+
+        'get the menu hierarchy string
+        menuitem = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if menuitem = "" then 
+            LogMessage "Missing required MENU HIERARCHY string in "& .TestCommand & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestRecord &" command failed."
+            exit sub
+        end if
+        
+        'get the test state string to parse 
+        testState = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if testState = "" then 
+            LogMessage "Missing required MENUITEM STATE string in "& .TestCommand & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestCommand &" command failed."
+            exit sub
+        end if
+
+        if IsMissing(match) then match = 0
+        if match <> 1 then match = 0
+                
+        'get the MenuInfo on the hierarchy string (if valid)
+        status = MUGetMenuHandleInfoFromHierarchy (hMenu, menuitem, info, match)
+        
+        'on failure
+        if status = 0 then
+            LogMessage menuitem &" was not found in the provided menu."& _
+                       "  See table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestCommand &" command failed."
+            exit sub
+        end if
+        
+        'get the actual current state string of the menuitem
+        menuState = MUGetMenuItemStateString(info.state)
+        
+        status = MUVerifyTestStateString (testState, menuState)
+                
+        if status = 1 then
+            .statuscode = SDNoScriptFailure
+            LogMessage "MenuItem "& menuitem &" matched expected state:"& testState, _
+                        PASSED_MESSAGE, ""
+        else
+            .statuscode = SDGeneralScriptFailure
+            LogMessage "MenuItem "& menuitem &" status failure "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       "Expected SubState:"& testState &" but FullState contained:"& menuState
+        end if
+        
+    End With
+    
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericVerifyMenuID(hMenu As Long)
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to verify the state information of a particular menuitem
+'#      identified by MenuID in the provided menu.  This is generally used when 
+'#      the menuitem is a bitmap or other item that does not have text.
+'#      This value can be retrieved from the the menu by index or by manual
+'#      lookup from a menu structure output from MenuUtilities.
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the additional 
+'#      information it needs to perform its function .
+'#
+'# INPUT PARAMETERS (from the calling module):
+'#
+'#      hMenu   The handle to the menu to use.  This will be provided
+'#              by other routines that retrieve this handle prior to this call.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      MenuID to identify which menuitem to test.  This is generally used 
+'#              when the menuitem is a bitmap or other item that does not have text.
+'#              This value can be retrieved from the the menu by index or by manual
+'#              lookup from a menu structure output from MenuUtilities.
+'#
+'#       6      Expected status string (or part thereof) to verify.  
+'#              Ex: "Enabled Checked"         OR  "Disabled Grayed"    etc.
+'#              Each item separated by a space will be evaluated separately so 
+'#              the order of the status items does not matter.  
+'#              These status items ARE case-sensitive. 
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyMenuID(hMenu)
+
+    Dim status
+    Dim menuitem
+    Dim menuID
+    Dim testState
+    Dim menuState
+    Dim info
+    Set info = New MenuInfo
+    
+    with otrd
+    
+       .statuscode = SDGeneralScriptFailure
+
+        'get the menuID string
+        menuitem = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if menuitem = "" then 
+            LogMessage "Missing required MENU ID in "& .TestCommand & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestCommand &" command failed."
+            exit sub
+        end if
+        
+        'try to convert to a long value
+        menuID = 0
+        On Error Resume Next
+        menuID = CLng(menuitem)
+        On Error goto 0
+        
+        'exit if type mismatch error (not a number)
+        if menuID = 0 then
+            LogMessage "Invalid MENU ID:"& menuitem &" in "& .TestCommand & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestCommand &" command failed."
+            exit sub
+        end if
+        
+        'get the test state string to parse 
+        testState = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if testState = "" then 
+            LogMessage "Missing required MENUITEM STATE string in "& .TestCommand & _
+                       " in table "& .FileName &" at line " & _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestCommand &" command failed."
+            exit sub
+        end if
+        
+        'get the MenuInfo on the menuID (if valid)
+        status = MUGetMenuHandleInfoFromMenuID (hMenu, menuID, info)
+        
+        'on failure
+        if status = 0 then
+            LogMessage "MenuID:"& CStr(menuID) &" was not found in the provided menu."& _
+                       "  See table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .TestCommand &" command failed."
+            exit sub
+        end if
+        
+        'get the actual current state string of the menuitem
+        menuState = MUGetMenuItemStateString(info.state)
+        
+        status = MUVerifyTestStateString (testState, menuState)
+                
+        if status = 1 then
+            .statuscode = SDNoScriptFailure
+            LogMessage "MenuID "& CStr(menuID) &" matched expected state:"& testState, _
+                        PASSED_MESSAGE, ""
+        else
+            .statuscode = SDGeneralScriptFailure
+            LogMessage "MenuID "& CStr(menuID) &" status failure "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       "Expected SubState:"& testState &" but FullState contained:"& menuState
+        end if
+
+    End With
+    
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub GenericVerifyPropertyToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the string value of a property to a file benchmark.
+'#      Much like GenericVerifyProperty only the expected value is in a file, 
+'#      not in a provided text string.
+'#
+'#      Note, strings have an inherent length limit of 32K.
+'#      
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------   
+'#
+'#       5      Case-sensitive name of the object property to verify
+'# 
+'#       6      Benchmark text filename.  Relative paths suitable for FindSQAFile
+'#              can be used.  Normally, the Benchmark file would reside in the 
+'#              Project's Datapool\Bench directory.
+'#
+'#       7      (Optional) File encoding. Support "utf-8", "ascii". If it is not
+'#              provided, system default encoding will be used.
+'#
+'#       8      (Optional) Filter MODE to be used on the retrieved property value.
+'#              This is for future implementations that will allow us to 
+'#              filter out dynamic text that we don't want to include in 
+'#              comparisons.  This is NOT currently implemented.
+'#
+'#       9      (Optional) Filter OPTIONS to be used in conjunction with any 
+'#              supplied Filter MODE.  This is not currently implemented.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyPropertyToFile()
+
+    Dim status
+    Dim sResult
+    Dim myproperty
+    Dim benchmark
+    Dim testdata
+    Dim testpath
+    Dim difpath
+    Dim fileref
+    Dim encoding
+    
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and check for a non-blank property name
+        myproperty = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if myproperty = "" then
+            LogMessage "No PROPERTY specified for "& .testcommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+        'get and validate bench file specification
+        benchmark = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if benchmark = "" then 
+            LogMessage "No BENCHMARK specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+    
+        'validate benchmark
+        sResult = FindSQAFile(benchmark)
+        if sResult = "" then
+            LogMessage "Could not find benchmark file for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+
+        benchmark = sResult     'fullpath
+        
+        'get encoding parameter
+        encoding = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        SAFSDebug "The file encoding is " & encoding, DEBUG_INFO 
+        
+        'extract and validate future filter MODE here
+        
+        'extract and validate future filter OPTIONS here
+
+        .windowGUIID.Activate
+                
+        sResult = ""
+        status = DDGGetGUIPropertyString(.compGUIID, myproperty, sResult)
+        
+        if status <> 0 then
+            LogMessage "Error retrieving property """& myproperty &""" for "& .TestCommand &" in table "& _
+                   .FileName &" at line "& .LineNumber, _
+                   FAILED_MESSAGE, _
+                   "Error code: "& CStr(status)
+            exit sub
+        end if
+        
+        testdata = sResult      'testdata contains retrieved HTML
+
+        sResult = GetShortFilename(benchmark)
+        if sResult = "" then
+            LogMessage "Could not determine output testdata filename for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   .InputRecord
+            exit Sub
+        end if
+
+        testpath = GetDDETestDirectory() & sResult
+        difpath = GetDDEDifDirectory() & sResult
+
+        status = WriteToFile2(testpath, testdata, False, encoding)
+        If status <> 0 Then
+            SAFSDebug "Met Error when writing to file " & testpath & _
+                      ", Error code: " & CStr(status), DEBUG_WARN 
+        End If
+        'perform any future filtering on testdata (and benchmark?)
+                
+        'compare benchmark to testpath data
+        status = Run_NTFileComp_EXE(benchmark, testpath, difpath, "/L", 3)
+        if status <> 0 then 'log failure to execute test.  0 = compare completed.
+            LogMessage "File Compare was unable to successfully execute for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   "FC Error:"& CStr(status) &": "& .InputRecord
+            exit Sub
+        end if
+        
+        status = NTFileCompResult(difpath)
+        if status <> 0 then 'log test failure.  0 = compare success.
+            LogMessage .CompName &" "& .TestCommand &" """& myproperty &""" did NOT match expected result from table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Benchmark at "& benchmark &"; Actual at "& testpath &"; Dif at "& difpath
+            exit sub
+        else
+            LogMessage .CompName &" "& .TestCommand &" """& myproperty &""" matched "& benchmark, _
+                       PASSED_MESSAGE, ""
+            .statuscode = SDNoScriptFailure
+        End if
+        
+    End With
+    
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub GenericCapturePropertyToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to capture the string value of a property to a file.
+'#
+'#      Note, strings have an inherent length limit of 32K.
+'#      
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------   
+'#
+'#       5      Case-sensitive name of the object property to verify
+'# 
+'#       6      Text filename.  Relative paths suitable for FindSQAFile
+'#              can be used.  Normally, the file would reside in the 
+'#              Project's Datapool\Test directory, if it doesn't exist, a new
+'#              file will be created.
+'#
+'#       7      (Optional) File encoding. Support "utf-8", "ascii". If it is not
+'#              provided, system default encoding will be used.
+'#
+'#       8      (Optional) Filter MODE to be used on the retrieved property value.
+'#              This is for future implementations that will allow us to 
+'#              filter out dynamic text that we don't want to include in 
+'#              comparisons.  This is NOT currently implemented.
+'#
+'#       9      (Optional) Filter OPTIONS to be used in conjunction with any 
+'#              supplied Filter MODE.  This is not currently implemented.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 15, 2011
+'# History:
+'#
+'#      SEP 15, 2011    Original Release
+'#
+'############################################################################
+Sub GenericCapturePropertyToFile()
+
+    Dim status
+    Dim sResult
+    Dim myproperty
+    Dim testfile
+    Dim encoding
+    Dim testdata
+    Dim testpath
+    
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and check for a non-blank property name
+        myproperty = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if myproperty = "" then
+            LogMessage "No PROPERTY specified for "& .testcommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+        'get and validate test file specification
+        testfile = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if testfile = "" then 
+            LogMessage "No Test file specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+        
+        'get encoding parameter
+        encoding = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        SAFSDebug "The file encoding is " & encoding, DEBUG_INFO
+                
+        'extract and validate future filter MODE here
+        
+        'extract and validate future filter OPTIONS here
+
+        .windowGUIID.Activate
+                
+        sResult = ""
+        status = DDGGetGUIPropertyString(.compGUIID, myproperty, sResult)        
+        
+        if status <> 0 then
+            LogMessage "Error retrieving property """& myproperty &""" for "& .TestCommand &" in table "& _
+                   .FileName &" at line "& .LineNumber, _
+                   FAILED_MESSAGE, _
+                   "Error code: "& CStr(status)
+            exit sub
+        end if
+        
+        testdata = sResult      'testdata contains the property's value
+
+        testpath = GetTestFileFullPath(testfile)
+        
+        If testpath="" Then
+           SAFSDebug "Can't find the full path for test file '"&testfile&"'", DEBUG_DEBUG
+           LogMessage "Could not determine output testdata filename for "& _
+               .TestCommand &" in table "& .FileName &" at line "& _
+               .LineNumber, FAILED_MESSAGE, _
+               .InputRecord
+           Exit Sub        
+        End If        
+        
+        status = WriteToFile2(testpath, testdata, False, encoding)
+        
+        'perform any future filtering on testdata (and benchmark?)
+
+        if status <> 0 then 'log test failure.  0 = compare success.
+            LogMessage .CompName &" "& .TestCommand &" """& myproperty &""" Failed. " & _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Output File: " & testpath & ",  Error code: "& CStr(status)
+            exit sub
+        else
+            LogMessage .CompName &" "& .TestCommand &" """& myproperty &""" Succeed." & _
+                       testdata & " is wrote to file "& testpath, _
+                       PASSED_MESSAGE, ""
+            .statuscode = SDNoScriptFailure
+        End if
+        
+    End With
+    
+End Sub
+
+'--------------------------------------------------------------------------------------------
+' Get the data contained in tcObj, and put the date into itemArray()
+' To support a special object, a specific GetObjectData can be defined in different *******Functions 
+' for calling from this procedure.
+' 
+' By Junwu Ma  
+' Parms:
+'     tcObj:   an TC object for getting data from
+'  itemArray(): an ouput array containing the data, MUST be 1-dimension array
+' 
+' return: true: ok for data put into itemArray  false:not supported classtype or false to get object data
+'History:
+'        JUL, 26, 2012 (Lei Wang) Use Eval() to get property, instead of calling DDGGetGUIPropertyString().
+'                               DDGGetGUIPropertyString() takes long time to get property like "wItem(0)", "wTabCaption(0)" 
+'		 AUG, 28, 1012 (Lei Wang) For ListView and ListBox, use ListViewFunctions to get their data.
+'-------------------------------------------------------------------------------------------- 
+Function GetObjectData(tcObj, ByRef itemArray()) 
+    Dim nameItemArray, nameItemCount
+    Dim itemCount
+    Dim TypeDomainSupported
+    Dim status, index
+    Dim astring, newvalue
+    
+    Dim propertyStr
+    Dim colCount, col
+        
+    GetObjectData = false 
+    TypeDomainSupported = true
+    
+    Select Case UCase(otrd.comptype)
+    Case "LISTVIEW", "LISTBOX"
+        GetObjectData = ListViewFunctions.GetObjectData(tcObj, itemArray)
+        exit function
+        
+    Case "COMBOBOX"
+        if otrd.environment = DDU_NET_ENVIRONMENT or otrd.environment = DDU_JAVA_ENVIRONMENT then
+            nameItemCount = "wItemCount"
+            nameItemArray = "wItem"
+        else
+            GetObjectData = ComboBoxFunctions.GetObjectData(tcObj, itemArray)
+            exit function
+        end if         
+           
+    Case "TABCONTROL"
+        if otrd.environment = DDU_NET_ENVIRONMENT then 
+            nameItemCount = "wTabCount"
+            nameItemArray = "wTabCaption" 
+        else
+            'to add support in other domains
+            TypeDomainSupported = false
+        end if
+
+    Case "JAVATABLE", "DATAGRID"
+        GetObjectData = DataGrid.GetObjectData(tcObj, itemArray)
+        
+        exit function
+        
+    Case "MENUBAR"
+        if otrd.environment = DDU_NET_ENVIRONMENT then  
+            GetObjectData = NetMenuBar.GetObjectData(tcObj, itemArray)           
+            exit function
+        elseif otrd.environment = DDU_FLEX_ENVIRONMENT then  
+            GetObjectData = FlexMenuBar.GetObjectData(tcObj, itemArray)
+            exit function
+        else
+            'to add support in other domains
+            TypeDomainSupported = false
+        end if 
+    Case "EDITBOX" 
+        GetObjectData = EditBoxFunctions.GetObjectData(tcObj, itemArray)           
+        exit function
+    Case "TREEVIEW"
+        if otrd.environment = DDU_NET_ENVIRONMENT or otrd.environment = DDU_FLEX_ENVIRONMENT then
+            GetObjectData = TreeViewFunctions.GetObjectData(tcObj, itemArray)           
+            exit function
+        else
+            TypeDomainSupported = false
+        end if                                
+    Case Else
+        'not supported type/domain; to add support for other Type  
+        TypeDomainSupported = false
+    End Select
+    
+    if TypeDomainSupported then
+            
+        On Error Resume Next
+
+        status = DDGGetGUIPropertyString(tcObj, nameItemCount, itemCount)
+        if status <> 0 then 
+            SAFSDebug "Could not examine property '"& nameItemCount & "' for " & otrd.CompName, DEBUG_WARN        
+            exit function
+        end if
+        
+        Redim itemArray(itemcount)   
+        for index = 0 to itemCount-1
+
+            astring = nameItemArray + "("+ CStr(index) +")"
+            'status  = DDGGetGUIPropertyString(tcObj, astring, newvalue)
+            'We should avoid to call DDGGetGUIPropertyString() to get property like "wItem(0)", "wTabCaption(0)"
+            'It will take a long time
+            'newvalue = tcObj.wItem(index)
+            With tcObj 
+                newvalue = Eval("." & astring)
+            End With
+            
+            if status <> 0 or Len(Trim(newvalue)) = 0 then 
+                'If property return empty value, need to drill down its property .Items (DotNet)
+                ' code may need to be put into ListViewFunction for sharing when ready... Junwu
+                with tcObj
+                  propertyStr = ".Items.Item(" & Trim(CStr(index)) & ").SubItems"
+                  'get column number
+                  colCount = Eval(propertyStr & ".Count") 
+                  newvalue = ""
+                  'delimited with Tab " " between column
+                  for col = 0 to colCount-1
+                    if col = 0 then
+                      newvalue = Eval(propertyStr & ".Item(" & Trim(CStr(col)) & ").Text") 
+                    else
+                      newvalue = newvalue + " " + Eval(propertyStr & ".Item(" & Trim(CStr(col)) & ").Text")
+                    end if 
+                  next 
+                end with    
+                '----------------------------------------------------------
+'                if status <> 0 then 
+'                  SAFSDebug otrd.CompName & "could not return items through property '" & nameItemArray & "'", DEBUG_WARN        
+'                  exit function
+'                end if
+            end if
+            itemArray(index) = newvalue
+        Next
+    else 
+        'Type not supported
+        SAFSDebug "GetObjectData unsupported for '" & otrd.comptype &"'. " & otrd.CompName, DEBUG_WARN  
+        exit function    
+    End If    
+
+    GetObjectData = true
+End Function
+
+'############################################################################
+'#
+'#   Sub GenericCaptureObjectDataToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to capture Object data (CompareData) to a specified file.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------
+'#
+'#       5      Output text filename.  Relative paths from the project directory
+'#              can be used.
+'#
+'#      [6]     (Optional) take "UTF-8" as default encoding. "UTF-8" or "ANSI"
+'#
+'#
+'# Author: Junwu Ma
+'# Date: APR 20, 2011
+'# History:
+'#      APR 20, 2011     Original Release
+'#      JUL 26, 2012     (Lei Wang) Modify to Write the whole list to a file once time by calling WriteArrayToFile()
+'#                                Instead of calling WriteToFile2() for each data in the list. 
+'#      AUG 17, 2012    (Lei Wang)  Update to support keyword CaptureObjectDataToFile for MenuBar object. (Flex, .NET)
+'#      SEP 27, 2013    (Lei Wang)  Rename this sub from CaptureObjectDataToFile to GenericCaptureObjectDataToFile (Remove previous sub GenericCaptureObjectDataToFile)
+'#
+'############################################################################
+Sub GenericCaptureObjectDataToFile()
+    Dim i, status, pos
+    Dim outputFile, testpath, encoding
+    Dim itemArray()
+    Dim isDataOK
+    
+    with otrd
+
+        'set default failure mode
+        .statuscode = SDGeneralScriptFailure
+
+        .windowGUIID.Activate
+
+        'get and validate file specification
+        outputFile = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if outputFile = "" then
+            LogMessage "No file specified for "& .testcommand &" in table "& _
+                       .filename &" at line "& .linenumber, _
+                       FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+          
+        status = inStr(1, outputFile, "\", 0)
+        if status = 0 then
+            testpath = GetDDETestDirectory() & outputFile
+        else
+            if (mid(outputFile, 2, 2) = ":\") or (left(outputFile, 2) = "\\") then
+                testpath = outputFile
+            else
+                if (left(outputFile, 1) = "\") then outputFile = mid(outputFile, 2)
+                testpath = GetDDEProjectDirectory() & outputFile            
+            End if     
+        End if
+
+        'get file encoding
+        encoding = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if encoding = "" then
+            encoding = "ANSI"                       
+        end if
+        
+        SAFSDebug "CaptureDataToFile... ouput file:'"& testpath & "'", DEBUG_INFO
+        SAFSDebug "......encoding: " & encoding, DEBUG_INFO         
+        
+        'get the object data
+        Redim itemArray(0)
+        
+        'get object data, the returned itemArray MUST be 1-dimension array
+        isDataOK = GetObjectData(.compGUIID, itemArray) 
+        
+        if Not isDataOK then
+            .statuscode = SDGeneralScriptFailure
+            LogMessage "Cannot GetObjectData for the control unsupport by TCAFS, processing "& .testcommand &" in table "& _
+                   .filename &" at line "& .linenumber, _
+                   FAILED_MESSAGE, .inputrecord  
+            exit Sub  
+        end if 
+
+        status = WriteArrayToFile(testpath, itemArray, False, encoding)
+        
+        If status <> 0 Then
+            .statuscode = SDGeneralScriptFailure  
+            SAFSDebug "Met Error when writing to file " & testpath & _
+                      ", Error code: " & CStr(status), DEBUG_WARN 
+            LogMessage "Possible file path error processing "& .testcommand &" in table "& _
+                   .filename &" at line "& .linenumber, _
+                   FAILED_MESSAGE, .inputrecord                      
+        else
+            .statuscode = SDNoScriptFailure 
+            LogMessage .testcommand & " performed on " & .compname & "; output file '" & testpath & "'.", _
+                   PASSED_MESSAGE, ""  
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericVerifyClipboardToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the string value of the clipboard to a file benchmark.
+'#      Much like GenericVerifyProperty only the expected value is in a file, 
+'#      not in a provided text string.
+'#
+'#      The clipboard contents are stored to a file in Datapool\Test with the 
+'#      same filename as the benchmark file (usually in Datapool\Bench) and then 
+'#      a file compare is performed.
+'#
+'#      The routine expects that the clipboard already contains the contents to 
+'#      compare with the benchmark file.  It also expects that Global 
+'#      StepDriverTestInfo contains all the information it needs to perform its 
+'#      function (like logging).
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------   
+'#
+'#       5      Benchmark text filename.  Relative paths suitable for FindSQAFile
+'#              can be used.  Normally, the Benchmark file would reside in the 
+'#              Project's Datapool\Bench directory.
+'#
+'#      [6]     (Optional) Filter MODE to be used on the retrieved property value.
+'#              This is for future implementations that will allow us to 
+'#              filter out dynamic text that we don't want to include in 
+'#              comparisons.  This is NOT currently implemented.
+'#
+'#      [7]     (Optional) Filter OPTIONS to be used in conjunction with any 
+'#              supplied Filter MODE.  This is not currently implemented.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyClipboardToFile()
+
+    Dim status
+    Dim sResult
+    Dim benchmark
+    Dim testpath
+    Dim difpath
+    Dim fileref
+    Dim FSO
+    
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        if Sys.Clipboard = "" then
+            LogMessage "No CLIPBOARD text exists for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub                                 
+        end if
+        
+        'get and validate bench file specification
+        benchmark = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if benchmark = "" then 
+            LogMessage "No BENCHMARK specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+    
+        'validate benchmark
+        sResult = FindSQAFile(benchmark)
+        if sResult = "" then
+            LogMessage "Could not find benchmark file for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if         
+
+        benchmark = sResult     'fullpath
+        
+        'extract and validate future filter MODE here
+        
+        'extract and validate future filter OPTIONS here
+
+        sResult = GetShortFilename(benchmark)
+        if sResult = "" then
+            LogMessage "Could not determine output testdata filename for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   .InputRecord
+            exit Sub
+        end if
+
+        testpath = GetDDETestDirectory() & sResult
+        difpath = GetDDEDifDirectory() & sResult
+
+        'Write the content of clipboard to test file
+        status = WriteToFile2(testpath, Sys.Clipboard, False, "")
+        If status <> 0 Then
+            SAFSDebug "Met Error when writing to file " & testpath & _
+                      ", Error code: " & CStr(status), DEBUG_WARN 
+        End If
+        
+        'perform any future filtering on testdata (and benchmark?)
+                
+        'compare benchmark to testpath data
+        status = Run_NTFileComp_EXE(benchmark, testpath, difpath, "/L", 3)
+        if status <> 0 then 'log failure to execute test.  0 = compare completed.
+            LogMessage "File Compare was unable to successfully execute for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   "FC Error:"& CStr(status) &": "& .InputRecord
+            exit Sub
+        end if
+        
+        status = NTFileCompResult(difpath)
+        if status <> 0 then 'log test failure.  0 = compare success.
+            LogMessage .TestCommand &" did NOT match expected benchmark from table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Benchmark at "& benchmark &"; Actual Clipboard at "& testpath &"; Dif at "& difpath
+            exit sub
+        else
+            LogMessage .TestCommand &" matched "& benchmark, _
+                       PASSED_MESSAGE, ""
+            .statuscode = SDNoScriptFailure
+        End if
+        
+    End With
+    
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub GenericVerifyClipboardVP()
+'#
+'# DESCRIPTION:
+'#
+'#      Performs a ClipboardVP.  
+'#      The benchmark VP must already exist and be an asset of the currently 
+'#      running script.
+'#
+'#      Example:
+'#          
+'#      #1    T MainWindow    MainWindow    VerifyClipboardVP  StoredVP
+'#      #2    T MainWindow SomeWindowObject VerifyClipboardVP  StoredVP
+'#          
+'#      If StoredVP is NOT in the AppMap then a standard VP compare will occur
+'#      with the typical VP parameter value like VP=StoredVP.
+'#      
+'#      However, if you wish to modify the ClipboardVP parameter values, such as 
+'#      specifying that the expected result = FAIL, then you must make an entry 
+'#      in the AppMap under the Window or Component name to provide these modified 
+'#      parameters.
+'#
+'#      AppMap Example for Example #1 above:
+'#
+'#        [MainWindow]
+'#        MainWindow=Type=Window....
+'#        ...
+'#        StoredVP=ExpectedResult=FAIL;Wait=1,5
+'#
+'#
+'#      AppMap Example for Example #2 above:
+'#
+'#        [MainWindow]
+'#        MainWindow....
+'#        ...
+'#        SomeWindowObject=Type=HTMLTable....
+'#
+'#        [SomeWindowObject]
+'#        StoredVP=ExpectedResult=FAIL;Wait=1,5
+'#
+'#
+'#      It is important to note that the WindowID and the ComponentID used to execute 
+'#      this command do not have to be valid GUI objects--but they cannot be blank.  
+'#      No test for existence or the setting of Context to these IDs is actually 
+'#      performed.  But, the Component (field 3) must exist as a section in the AppMap 
+'#      if we wish to store modified VP parameter settings.
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      name of the pre-existing VP asset stored in the currently running script.
+'#              If the name also exists in the app map under the component then it is expected 
+'#              to contain modified parameters for the ClipboardVP.
+'#
+'#      The benchmark VP must already exist and be an asset of the currently 
+'#      running script.
+'#
+'#      Example:
+'#          
+'#      #1    T MainWindow    MainWindow    VerifyClipboardVP  StoredVP
+'#      #2    T MainWindow SomeWindowObject VerifyClipboardVP  StoredVP
+'#          
+'#      If StoredVP is NOT in the AppMap then a standard VP compare will occur
+'#      with the typical VP parameter value like VP=StoredVP.
+'#      
+'#      However, if you wish to modify the ClipboardVP parameter values, such as 
+'#      specifying that the expected result = FAIL, then you must make an entry 
+'#      in the AppMap under the Window or Component name to provide these modified 
+'#      parameters.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyClipboardVP()
+
+Dim VPIN
+Dim Result
+Dim region
+
+'$NoCStrings
+
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate bench VP image specification
+        VPIN = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if VPIN = "" then 
+            LogMessage .TestCommand &" missing required VP Name "& _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+                        
+        'if the VP name exists in the appmap then it is a modified VP
+        region = DDGGetGUIID(.compname, VPIN, "")
+        
+        if region = "" then        
+            Result = ClipboardVP(Compare, "", "VP="& VPIN)
+        else
+            if Left(region, 1) <> ";" then region = ";"& region
+            Result = ClipboardVP(Compare, "", "VP="& VPIN & region)
+        end if
+        
+        if Result = 1 then
+            .statuscode = SDNoScriptFailure
+            LogMessage .TestCommand &" compare matched Bench:"& VPIN, _
+                       PASSED_MESSAGE, ""
+        else
+            LogMessage .TestCommand &" failure for "& VPIN & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+        end if
+
+    End With    
+
+End sub
+
+'############################################################################
+'#
+'#   Sub GenericInputKeys(isKeys)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Sends keystrokes to the specified component via Test Complete's InputKeys 
+'#      command.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      String of keystrokes to send.
+'#              Consult the documentation on the Test Complete's InputKeys 
+'#              command for syntax information for special characters and keys.  
+'#              This routine sends the provided string unmodified to the InputKeys
+'#              command.
+'#              Note: Only valid for components that accept windows keyboard input
+'#
+'# PARAMETERS:
+'#      isKeys Boolean, True if the string is keys:        For keyword InputKeys 
+'#                      False if the string is characters: For keyword InputCharacters
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#      JUL 01, 2010    (Carl Nagle) Made a working TCAFS version
+'#      MAR 18, 2011    (Carl Nagle) Accept standard SAFS InputKeys Syntax
+'#      JUL 23, 2012    (Lei Wang) Update to support keyword InputCharacters
+'#      JUN 21, 2013    (Carl Nagle) Do NOT .Activate/.SetFocus CurrentWindow
+'#
+'############################################################################
+Sub GenericInputKeys(isKeys)
+
+    Dim VPIN, convertedStr
+    Dim errCount
+
+    with otrd
+
+        .statuscode = SDGeneralScriptFailure
+
+    	On Error Resume Next
+    	SAFSDebug "GenericInputKeys function processing...", DEBUG_INFO
+	
+        VPIN = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if VPIN = "" then 
+            SAFSDebug "GenericInputKeys function missing required VPIN parameter...", DEBUG_WARN
+            LogMessage "Missing expected keystrokes string for " & .TestCommand & _
+                       " in table " & .FileName & " at line " & _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .WindowName & ":" & .CompName &" "& .TestCommand &" command failed."                       
+            exit sub
+        end if
+        
+        'Carl Nagle -- .windowGUIID.Activate
+        DDGActivateNotCurrentWindow .windowGUIID
+        
+        if .compGUIID <> "" then
+            'SetFocus will NOT work for some components!!! 
+            'Carl Nagle -- .compGUIID.SetFocus
+            DDGSetFocusNotCurrentWindow .compGUIID        
+        end if
+        
+        SAFSDebug "Original Strings: " & VPIN, DEBUG_DEBUG
+        If isKeys Then
+            convertedStr = ConvertSAFSInputKeys(VPIN)
+            VPIN = convertedStr
+        Else
+            convertedStr = ConvertInputCharacters(VPIN)
+        End If
+        SAFSDebug "Converted Strings: " & convertedStr, DEBUG_DEBUG
+        
+        Err.Clear     
+        errCount = Log.ErrCount
+        
+        'Before typing, Keys activates the application window that contains the object and gives that object the input focus.
+        .compGUIID.Keys convertedStr
+        If errCount<>Log.ErrCount Or Err.Number<>0 Then
+            SAFSDebug "Try to use Sys.Keys to send keys." , DEBUG_DEBUG
+            'Sys.Keys will send the characters to the focused component!!!
+            Sys.Keys convertedStr
+        End If
+
+    	if Err.Number = 0 then
+            SAFSDebug VPIN &" sent to "& .WindowName & ":" & .CompName , DEBUG_INFO
+            LogMessage VPIN &" sent to "& .WindowName & ":" & .CompName , PASSED_MESSAGE, ""
+            .statuscode = SDNoScriptFailure 
+        else
+            SAFSDebug .testcommand & " failure with TCAFS error "& CStr(Err.Number) &":"& Err.Description, DEBUG_DEBUG
+            LogMessage .testcommand & " failure with TCAFS error "& CStr(Err.Number) &":"& Err.Description, FAILED_MESSAGE, .inputrecord
+            .statuscode = SDGeneralScriptFailure 
+    	End If
+    End With
+    
+End Sub
+
+'# ##########################################################################
+'#
+'#   Function FindTabFile(FileName As String) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to find the location of the file that contains the information about the screen.
+'#      This function will search most of the er which is the default directory. This function is
+'#      internal to the DDE and called from the TabOrder function. It should not be referenced
+'#      outside of the internal uses of the DDE.
+'#      
+'# PARAMETERS:
+'#
+'#      FileName - The name of the file to look for.
+'#
+'# Return String:
+'#
+'#      The Path and filename that will be used to check the taborder.
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 25, 2006
+'# History:
+'#
+'#      SEP 25, 2006    Original Release
+'#
+'# ##########################################################################
+
+Function FindTabFile(FileName)
+
+    Dim tempstring
+    Dim found
+    
+    On Error Resume Next    
+
+    'try the Datapool\taborder directory first, this is the default
+    tempstring = Project.Path & "Datapool\TabOrder\" & FileName
+    found = Dir(tempstring)
+    
+    'try Datapool (for optimization)
+    if found ="" then 
+        FindTabFile = FindSQAFile(FileName)
+    else
+        FindTabFile = tempstring
+    end if
+    
+End Function
+
+'############################################################################
+'#
+'#   Sub GenericVerifyTabOrder ()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to verify the tab order of the current object--usually a Window.  
+'#      A file is used to store the correct tab order of the interface. 
+'#
+'#      The file is simply a list of component names in the order we expect to find 
+'#      them as we tab through the interface.  Each line in the file will contain a 
+'#      single component name.  That can be either the real valid Name given to the 
+'#      component by development, or the name for the component from the AppMap.  The 
+'#      AppMap name is highly recommended to reduce maintenance of the tab order file.
+'#      Blank lines or commented lines are ignored.  Comment lines begin with 
+'#      apostrophe(') or semi-colon(;) characters.
+'#
+'#      Example file: 
+'#      
+'#              ;Tab Order Benchmark File
+'#              ;For ClassicC Login Window
+'#      
+'#              UserIDComboBox
+'#              PasswordEditBox
+'#              RememberCheckBox
+'#      
+'#              OKButton
+'#              CancelButton
+'#      
+'#      
+'#      This file would normally be placed in the Datapool\Bench directory.
+'#
+'#      The function will verify that the object order in the interface is the same
+'#      object order that is in the file. This is done by checking the FOCUS
+'#      Property of the current object and using the TAB key for navigation.
+'#      Thus, navigation by the TAB key must be supported by the application.
+'#
+'#      The routine will only check the tab order for the number of items found 
+'#      in the tab order benchmark file.  Thus, the user can perform partial tests 
+'#      on different portions of the interface at different times.  Just make sure 
+'#      that the item that currently has the focus is the first item in the tab order 
+'#      benchmark file when invoking this command.
+'#
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Filename of the tab order benchmark file. (Ex: LoginWin.TAB)
+'#              This file must be in the normal search path for <a href="FileUtilities.htm#FindSQAFile" target="_blank">FindSQAFile</a> 
+'#              or the full path must be provided.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 25, 2006
+'# History:
+'#
+'#      SEP 25, 2006    Original Release
+'#
+'############################################################################
+Sub GenericVerifyTabOrder()
+
+    Dim PathName
+    Dim fileref
+    Dim varFocus
+    Dim Result
+    Dim filename
+    Dim ObjName
+    Dim ObjRec
+    Dim varVisible
+    Dim FSO
+    
+    On Error Resume Next
+    
+    with otrd
+
+        .statuscode = SDGeneralScriptFailure
+
+        filename = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if filename = "" then 
+            LogMessage "Missing FileName field in "& UCase(.TestCommand) & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       "Unable to verify tab order for "& .CompName &"."
+            exit Sub
+        end if
+        
+        PathName = FindTabFile(filename)
+        
+        If PathName = "" Then
+            LogMessage "File Not Found in "& UCase(.TestCommand) & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       "Unable to verify tab order for "& .CompName &"."
+            Exit Sub
+        End If
+        
+        Set FSO = Sys.OleObject("Scripting.FileSystemObject")
+        Set Fileref =FSO.OpenTextFile(PathName, 1)
+        
+        'If error in opening file, close and reopen
+        If Err.Number <> 0 Then
+            FileRef.FileClose
+            FileRef.FileOpen
+        End If
+
+        LogMessage "Verifying Tab Order of "& .CompName &"...", "", ""
+        
+        Do While Not Fileref.AtEndOfStream
+
+            'reusing PathName variable for a simple comment test
+            PathName = Fileref.ReadLine
+            ObjName=TrimWhitespace(PathName)
+            If ObjName <> "" then
+                PathName = Left(ObjName, 1)
+                If (PathName <> "'") or (PathName <> ";") then
+
+                    .windowGUIID.Activate
+                    
+                    ObjRec = ObjName
+                    Result = DDGGetGUIPropertyVariant(objRec, "Focus", varFocus)
+                    If Result <> 0 then
+                        ObjRec = DDGGetGUIID(.compName, objName, "")
+                        Result = DDGGetGUIPropertyVariant(ObjRec, "Focus", varFocus)
+                    end if
+
+                    If result <> 0 then
+                        LogMessage "Unable to find FOCUS in "& UCase(.TestCommand) & _
+                               " in table "& .FileName &" at line "& _
+                               .LineNumber, FAILED_MESSAGE, _
+                               .CompName &":"& objName &" unable to verify tab order. "& _
+                               Err.Description
+                        Fileref.FileClose
+                        Exit Sub
+                    End if
+
+                    Result = DDGGetGUIPropertyVariant(ObjRec, "Visible", varVisible)
+                    If result <> 0 then
+                        LogMessage "Unable to find VISIBLE in "& UCase(.TestCommand) & _
+                               " in table "& .FileName &" at line "& _
+                               .LineNumber, FAILED_MESSAGE, _
+                               .CompName &":"& objName &" unable to verify tab order. "& _
+                               Err.Description
+                        Fileref.FileClose
+                        Exit Sub
+                    End if
+
+                    if varFocus = 0 Then
+                        LogMessage objName &" is not in correct Tab Order for "& UCase(.TestCommand) & _
+                               " in table "& .FileName &" at line "& _
+                               .LineNumber, FAILED_MESSAGE, _
+                               .CompName &":"& objName &" is not in correct Tab Order."
+
+                        If VarVisible = "False" Then
+                            LogMessage objName &" is not Visible for "& UCase(.TestCommand) & _
+                                  " in table "& .FileName &" at line "& _
+                                  .LineNumber, FAILED_MESSAGE, _
+                                  .CompName &":"& objName &" is not visible."
+                        End If
+                        Fileref.FileClose
+                        Exit Sub
+                    Else
+                        LogMessage "    "& objName &" is in correct Tab Order.", "", ""
+                    End If
+
+                    .windowGUIID.Keys "[TAB]"
+                End If
+            End If
+        Loop
+
+        LogMessage "Tab Order for "& .CompName &" appears correct.", PASSED_MESSAGE, ""
+        .statuscode = SDNoScriptFailure
+
+    End With
+        
+End Sub
+
+
+'############################################################################
+'#
+'#  Sub GenericGetGUIImage()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to capture the screen shot of a GUI component and save it to a file.
+'#      The available formats for the output file are BITMAP (*.bmp) and JPEG
+'#      (*.jpg). Optionally it can capture a specified part
+'#      of the component.
+'#
+'#      The specified GUI component/part must be in the viewing range of its 
+'#      containing window. If portion of the component is displayed in the 
+'#      window, only that portion will be captured; if the component falls 
+'#      completely out of the viewing range of the window, the command will 
+'#      fail. The routine makes no attemp to bring the component into view.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information
+'#      it needs to perform its function.
+'#
+'#      NOTE: the command may fail to execute if the user has turned off logging 
+'#      to TestManager via the Robot tools setting.  You may have to enable TestManager
+'#      logging for the command to successfully execute.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info.
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------
+'#       5      Path (with filename) to the output image file.
+'#              This can be a full path or a relative path. If relative, the
+'#              function will try to build the full path by appending it to the
+'#              project path. The extension of the file must be either .bmp or
+'#              .jpg. If not, .bmp is appended to this parameter to force a
+'#              BITMAP export.
+'#
+'#      [6]     Optional app map subkey indicating partial image of the component to capture.
+'#              Value of this app map reference must be in the format of a
+'#              top-left and bottom-right pair, and can be either absolute
+'#              coordinates or percentages ("x1,y1,x2,y2" or "x1%,y1%,x2%,y2%").
+'#              Coordinates are relative to the component, i.e. (0,0) and
+'#              (0%,0%) are the minimum, and (COMPONENT_WIDTH, COMPONENT_HEIGHT)
+'#              and (100%,100%) are the maximum. Values exceeding the minimun/
+'#              maximum are forced to the nearest limiting value. Absolute and
+'#              percent values can be mixed, so "0,0,50%,50%" is valid. If this
+'#              parameter is omitted, full image of the component is captured
+'#              (equivalent to "0,0,100%,100%").
+'#
+'#      Examples:
+'#
+'#          Save the full component image to BITMAP file "C:\comp.bmp"
+'#              T, WINDOW, COMPONENT, GetGUIImage, "C:\comp.bmp"
+'#
+'#          Save the full component image to JPEG file "<project>\Datapool\comp.jpg"
+'#              T, WINDOW, COMPONENT, GetGUIImage, "Datapool\comp.jpg"
+'#
+'#          Save specified part of the component image
+'#              T, WINDOW, COMPONENT, GetGUIImage, "Datapool\Logs\comp.bmp", SUBAREA
+'#
+'#              Depending on the definition of SUBAREA in the app map, the command captures:
+'#
+'#              UNDER [COMPONENT] IN APP MAP    PART OF COMPONENT
+'#              ----------------------------    ---------------------
+'#              SUBAREA="0,0,10,10"             top-left 10x10 square
+'#              SUBAREA="0,80%,100%,100%"       bottom fifth
+'#
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Yuesong Wang
+'# Orig   Date: JUL 17, 2002
+'# History:
+'#
+'#      JUL 17, 2002                -Original Release
+'#      OCT 21, 2005    (Bob Lawler)    -Updated displayed Rectangle.right and Rectangle.bottom coordinates in 
+'#                                   our output due to a consistent Robot problem of miscalculating those 
+'#                                   coordinates based on the proper width & height read from object (RJL).
+'#      MAR 29, 2011    (eitaht)    -Modified all of the log messages so they will work with TestComplete.
+'#                                   In some cases, changed .testcommand to UCase(.TestCommand), 
+'#                                   Str$(.linenumber) to .LineNumber, and Str$(status) and Error$(status)
+'#                                   to status. 
+'#                                  -Modified 'With StepDriverTestInfo' to
+'#                                   On Error Resume Next
+'#                                   with otrd
+'#                                  -Modified the section that gets the screen coordinates of the component
+'#
+'#     JUN 21, 2013     (Carl Nagle)    - do NOT .Activate 'CurrentWindow' objects. 
+'#
+'############################################################################
+Sub GenericGetGUIImage()
+
+    Dim status
+    Dim stemp
+
+    On Error Resume Next
+    
+    with otrd
+
+        'set default failure mode
+        .statuscode = DDU_GENERAL_SCRIPT_FAILURE
+
+        Dim outfilepath
+        outfilepath = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        ' validate output file specification
+        if len(outfilepath) = 0 then
+            LogMessage "No OUTPUT FILE specified for "& UCase(.TestCommand) & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .CompName &"."
+            exit sub
+        elseif instr(outfilepath, "\") = 0 then
+            ' file name only
+            outfilepath = GetDDETestDirectory() & outfilepath
+        elseif left(outfilepath,2) <> "\\" and mid(outfilepath, 2, 1) <> ":" then
+            ' not a full path (relative)
+            if left(outfilepath,1) <> "\" then
+                outfilepath = "\" & outfilepath
+            end if
+            outfilepath = GetDDEDatapoolDirectory() & outfilepath
+        end if
+        ' if the extension is not .bmp or .jpg, append .bmp
+        if ucase(right(outfilepath,4)) <> ".BMP" and ucase(right(outfilepath,4)) <> ".JPG"  then
+            outfilepath = outfilepath & ".bmp"
+        end if
+
+        ' get the optional SUBAREA parameter
+        Dim subarea
+        stemp = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if stemp <> "" then
+            subarea = DDGGetGUIID(.compname, stemp )
+            'if not in AppMap then use "as-is"
+            if subarea = "" then subarea = stemp
+        end if
+        
+        'Carl Nagle -- .windowGUIID.Activate
+        DDGActivateNotCurrentWindow .windowGUIID
+        
+        Dim sxLeft, syTop, sRight, sBottom
+        status =  DDGGetGUIPropertyString(.compGUIID, "ScreenLeft", stemp)
+        sxLeft = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component ScreenLeft property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+              exit sub
+        end if
+                     
+        status =   DDGGetGUIPropertyString(.compGUIID, "ScreenTop", stemp)
+        syTop = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component ScreenTop property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+              exit sub
+        end if
+        
+        status =  DDGGetGUIPropertyString(.compGUIID, "Width", stemp)
+        sRight = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component Right property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+            exit sub
+        end if
+        
+        status = DDGGetGUIPropertyString(.compGUIID, "Height", stemp)
+        sBottom = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component Bottom property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+            exit sub
+        end if
+
+        Dim saRect        
+        Set saRect = Utils.Rect 
+        if subarea <> "" then
+            ' get relative subarea rect
+            status = GetMaskFromString( sRight, sBottom, subarea, saRect )
+            if status <> true then
+                LogMessage "Failed to convert SUBAREA """& subarea & _
+                           """ to rectangle for "& UCase(.TestCommand) & _
+                           " in table "& .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                           .inputrecord
+                exit sub
+            end if
+            ' get absolute subarea rect (not apply to TC)
+            'saRect.left   = compRect.left + saRect.left
+            'saRect.top    =compRect.top + saRect.top
+            'saRect.right  = compRect.left + saRect.right
+            'saRect.bottom =compRect.top + saRect.bottom
+        else
+            saRect.Right = sRight
+            saRect.Bottom = sBottom
+        end if
+        
+        ' capture the the object image to a .img file
+        Dim actvpfile
+        Set actvpfile = .compGUIID.Picture(saRect.Left, saRect.Top, saRect.Width, saRect.Height, False)
+        
+        if Not IsObject(actvpfile) or actvpfile.Size.Width < 1 then
+            LogMessage UCase(.TestCommand) & " failed to capture screen image of " & _
+                       .compname & " (" & saRect.left & "," & saRect.top & "," & _
+                       saRect.right & "," & saRect.bottom & ") in table "& _
+                       .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+
+        ' export the vp .img file to an image file (bmp or jpg).
+        status = actvpfile.SaveToFile(outfilepath)
+        if status <> true then
+            LogMessage UCase(.TestCommand) & _
+                       " failed to export the captured image to file in table "& _
+                       .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                       .inputrecord
+            Set actvpfile = Nothing
+            exit sub
+        end if
+
+        Set actvpfile = Nothing
+
+        LogMessage .compname & _
+                   " (" & saRect.left & "," & saRect.top & "," & _
+                   saRect.right & "," & saRect.bottom & ") " & _
+                   "image saved to file " & outfilepath, PASSED_MESSAGE, ""
+        .statuscode = SDNoScriptFailure 
+    End With
+
+End sub
+
+'############################################################################
+'#
+'#  Sub GenericVerifyGUIImageToFile()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the screen shot of a GUI component with a benchmark image file.
+'#      Much like GenericGetGUIImage (same window boundary check applies) only 
+'#      the captured and exported image is compared to a benchmark BMP or JPG 
+'#      file via DOS command FC. Note that if you have a full screen shot of the
+'#      component as the benchmark, and the actual screen shot is a partial
+'#      image of the component, the command would fail.
+'#
+'#      Also note that the type (extension) of the benchmark file determines what
+'#      format (BMP or JPG) the screen shot is exported to. If the extension of
+'#      the benchmark file is not BMP or JPG, it is considered a BMP file. The
+'#      dif file will have a .txt extension, because FC command outputs text.
+'#      For example, if bench file is "ImageVerification.bmp", dif file will be
+'#      "ImageVerification.bmp.txt".
+'#
+'#      This command also supports the "TF"(expected failure) record type. 
+'#
+'#      This command supports the "TW" record type when the user has configured 
+'#      a diff tool for which we have no means to automatically verify the results.
+'#      The command will issue a WARNING if such a tool is configured and used.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information
+'#      it needs to perform its function.
+'#      
+'#      NOTE: the command may fail to execute if the user has turned off logging 
+'#      to TestManager via the Robot tools setting.  This logging must be enabled 
+'#      for the command to successfully execute.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info.
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------
+'#       5      Name of the benchmark image file.
+'#              Relative paths suitable for FindSQAFile can be used. Normally,
+'#              the Benchmark file would reside in the Project's Datapool\Bench
+'#              directory. A test file with the same name would be created in
+'#              the Datapool\Test folder. The resulting dif file with .txt
+'#              extension would be saved under the Datapool\Dif folder. The
+'#              extension of the benchmark file should be .bmp or .jpg. If not,
+'#              it is considered a BMP file, i.e. the test file would have a
+'#              .bmp extension.
+'#      [6]     Optional app map subkey indicating partial image of the component to verify.
+'#              Value of this app map reference must be in the format of a
+'#              top-left and bottom-right pair, and can be either absolute
+'#              coordinates or percentages ("x1,y1,x2,y2" or "x1%,y1%,x2%,y2%").
+'#              Coordinates are relative to the component, i.e. (0,0) and
+'#              (0%,0%) are the minimum, and (COMPONENT_WIDTH, COMPONENT_HEIGHT)
+'#              and (100%,100%) are the maximum. Values exceeding the minimun/
+'#              maximum are forced to the nearest limiting value. Absolute and
+'#              percent values can be mixed, so "0,0,50%,50%" is valid. If this
+'#              parameter is omitted, full image of the component is captured
+'#              (equivalent to "0,0,100%,100%").
+'#
+'#      Examples:
+'#
+'#          Verify the full component image with BITMAP file "<project>\Datapool\Bench\comp.bmp"
+'#              T, WINDOW, COMPONENT, VerifyGUIImageToFile, "comp.bmp"
+'#
+'#          Verify the full component image with JPEG file "<project>\Datapool\Bench\comp.jpg"
+'#              T, WINDOW, COMPONENT, VerifyGUIImageToFile, "comp.jpg"
+'#
+'#          Verify specified part of the component image with a bench file
+'#              T, WINDOW, COMPONENT, VerifyGUIImageToFile, "comp.bmp", SUBAREA
+'#
+'#              Depending on the definition of SUBAREA in the app map, the command verifies:
+'#
+'#              UNDER [COMPONENT] IN APP MAP    PART OF COMPONENT
+'#              ----------------------------    ---------------------
+'#              SUBAREA="0,0,10,10"             top-left 10x10 square
+'#              SUBAREA="0,80%,100%,100%"       bottom fifth
+'#
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Yuesong Wang
+'# Orig   Date: JUL 18, 2002
+'# History:
+'#
+'#      JUL 18, 2002    Original Release
+'#      DEC 17, 2002    (Carl Nagle) Enable TF record type.
+'#      AUG 14, 2003    (Carl Nagle) Added use of DDUtilities for directories.
+'#      AUG 18, 2003    (Carl Nagle) Mods to allow alternate file comparator tools.
+'#      MAR 29, 2011    (eitaht)    -Modified all of the log messages so they would
+'#                                   work with TestComplete.  In some cases, changed
+'#                                   .testcommand to UCase(.TestCommand) and
+'#                                   Str$(.linenumber) to .LineNumber
+'#                                   Str$(status) and Error$(status) to status
+'#                                  -Changed With StepDriverTestInfo to
+'#                                   On Error Resume Next
+'#                                   with otrd
+'#      APR 07, 2011    (Carl Nagle) Made to work with Test Complete.  
+'#                               Supports T, TW, TF modes.
+'#
+'############################################################################
+sub GenericVerifyGUIImageToFile()
+
+    Dim status
+    Dim stemp
+    Dim sResult
+
+    On Error Resume Next
+    
+    with otrd
+
+        'set default failure mode
+        .statuscode = DDU_GENERAL_SCRIPT_FAILURE
+
+        ' get full path to the benchmark file
+        Dim benchpath
+        benchpath = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if benchpath = "" then
+            LogMessage "No BENCHMARK specified for "& UCase(.TestCommand) & _
+                       " in table "& _
+                       .filename &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .compname
+            exit sub
+        end if
+        'validate benchmark
+
+        ' if the extension is not .bmp or .jpg, append .bmp
+        if ucase(right(benchpath,4)) <> ".BMP" and ucase(right(benchpath,4)) <> ".JPG"  then
+            benchpath = benchpath &".bmp"
+        end if        
+        
+        sResult = FindSQAFile(benchpath)
+        if sResult = "" then
+            LogMessage "Could not find benchmark file for "& _
+                       UCase(.TestCommand) &" in table "& _
+                       .filename &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+        benchpath = sResult     'fullpath
+
+        ' determine test file and dif file path
+        Dim testpath, difpath
+        sResult = GetShortFilename(benchpath)
+        if sResult = "" then
+            LogMessage "Could not determine output testdata filename for "& _
+                   UCase(.TestCommand) &" in table "& .filename &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   .inputrecord
+            exit Sub
+        end if
+        testpath = GetDDETestDirectory() & sResult
+        difpath = GetDDEDifDirectory() & sResult 
+
+        Dim fso        
+        Set fso = CreateObject("Scripting.FileSystemObject")        
+        if fso.FileExists(testpath) then fso.DeleteFile testpath, true    
+        if fso.FileExists(difpath) then fso.DeleteFile difpath, true
+        Set fso = Nothing
+            
+        ' get the optional SUBAREA parameter
+        Dim subarea
+        subarea = ""
+        stemp = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if stemp <> "" then
+            subarea = DDGGetGUIID(.compname, stemp )
+            if subarea = "" then
+                'LogMessage "SUBAREA:" & stemp & " was not found in the app map for "& _
+                '           UCase(.TestCommand) &" in table "& _
+                '           .filename &" at line "& .LineNumber, _
+                '           FAILED_MESSAGE, _
+                '           .inputrecord
+                'exit sub
+                ' assume to use as-is
+                subarea = stemp
+            end if
+        end if
+        
+        .windowGUIID.Activate
+        
+        ' get the screen coords of the component
+        Dim sxLeft, syTop, sRight, sBottom
+        status =  DDGGetGUIPropertyString(.compGUIID, "ScreenLeft", stemp)
+        sxLeft = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component ScreenLeft property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+              exit sub
+        end if
+                     
+        status =   DDGGetGUIPropertyString(.compGUIID, "ScreenTop", stemp)
+        syTop = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component ScreenTop property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+              exit sub
+        end if
+        
+        status =  DDGGetGUIPropertyString(.compGUIID, "Width", stemp)
+        sRight = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component Right property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+            exit sub
+        end if
+        
+        status = DDGGetGUIPropertyString(.compGUIID, "Height", stemp)
+        sBottom = stemp
+        if status <> 0 or stemp = "" then
+            LogMessage "Error "& status &" performing "& UCase(.TestCommand) & _
+                     " (retrieving component Bottom property) in table "& _
+                     .filename &" at line "& _
+                     .LineNumber, FAILED_MESSAGE, status
+            exit sub
+        end if
+
+        Dim saRect        
+        Set saRect = Utils.Rect 
+        if subarea <> "" then
+            ' get relative subarea rect
+            status = GetMaskFromString( sRight, sBottom, subarea, saRect )
+            if status <> true then
+                LogMessage "Failed to convert SUBAREA """& subarea & _
+                           """ to rectangle for "& UCase(.TestCommand) & _
+                           " in table "& .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                           .inputrecord
+                exit sub
+            end if
+            ' get absolute subarea rect (not apply to TC)
+            'saRect.left   = compRect.left + saRect.left
+            'saRect.top    =compRect.top + saRect.top
+            'saRect.right  = compRect.left + saRect.right
+            'saRect.bottom =compRect.top + saRect.bottom
+        else
+            saRect.Right = sRight
+            saRect.Bottom = sBottom
+        end if
+        
+        Dim actvpfile, benchvpfile, difvpfile
+        
+        Set benchvpfile = Utils.Picture
+        status = benchvpfile.LoadFromFile(benchpath)
+        if status = false or Not IsObject(benchvpfile) or benchvpfile.Size.Width < 1 then
+            LogMessage UCase(.TestCommand) & " failed to load bench image from " & _
+                       benchpath & " in table "& _
+                       .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                       .inputrecord
+            Set benchvpfile = Nothing
+            exit sub
+        end if
+                
+        Set actvpfile = .compGUIID.Picture(saRect.Left, saRect.Top, saRect.Width, saRect.Height, False)
+        
+        if Not IsObject(actvpfile) or actvpfile.Size.Width < 1 then
+            LogMessage UCase(.TestCommand) & " failed to capture screen image of " & _
+                       .compname & " (" & saRect.left & "," & saRect.top & "," & _
+                       saRect.right & "," & saRect.bottom & ") in table "& _
+                       .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                       .inputrecord
+            Set benchvpfile = Nothing
+            Set actvpfile = Nothing
+            exit sub
+        end if
+
+        status = actvpfile.SaveToFile(testpath)
+        if status <> true then
+            LogMessage UCase(.TestCommand) & _
+                       " failed to export the captured image to file in table "& _
+                       .filename &" at line "& .LineNumber, FAILED_MESSAGE, _
+                       .inputrecord
+            Set benchvpfile = Nothing
+            Set actvpfile = Nothing
+            exit sub
+        end if
+
+        '************ Compare bench file and test file here **************
+        'no transparency info, 0 pixel tolerance, no mouse image, 0 color tolerance
+        status = actvpfile.Compare(benchvpfile,false,0,false,0)
+        
+        'matched
+        if status = true then 
+            if (.recordType = DDU_TEST_STEP) or (.recordType = DDU_TEST_STEP_WARNOK) then
+                LogMessage .compname &" "& UCase(.TestCommand) & _
+                           " """& subarea &""" matched "& benchpath, _
+                           PASSED_MESSAGE, ""
+                .statuscode = DDU_NO_SCRIPT_FAILURE
+
+            'expected failure mode
+            else
+                LogMessage .compname &" "& UCase(.TestCommand) & _
+                           " """& subarea &""" matched "& _
+                           benchpath &" but it was NOT suppose to in table "& _
+                           .filename &" at line "& .LineNumber, _
+                           FAILED_MESSAGE, .inputrecord
+            end if
+        'NOT matched            
+        else
+            if (.recordType = DDU_TEST_STEP) or (.recordType = DDU_TEST_STEP_WARNOK) then
+                Set difvpfile = testvpfile.Difference(benchvpfile,false,0,false,0)
+                status = difvpfile.SaveToFile(difpath)       
+                LogMessage .compname &" "& UCase(.TestCommand) & _
+                           " """& subarea & _
+                           """ did NOT match benchmark from table "& _
+                           .filename &" at line "& .LineNumber, _
+                           FAILED_MESSAGE, _
+                           "Benchmark at "& benchpath &"; Actual at "& _
+                           testpath &"; Dif at "& difpath
+            'expected failure mode
+            else  
+                LogMessage .compname &" "& UCase(.TestCommand) & _
+                           " """& subarea &""" did NOT match "& _
+                           benchpath &" but it was not supposed to.", _
+                           PASSED_MESSAGE, ""
+                .statuscode = DDU_NO_SCRIPT_FAILURE
+            end if
+        end if
+
+        Set actvpfile = Nothing
+        Set benchvpfile = Nothing
+        Set difvpfile = Nothing
+        
+    End With
+
+End sub
+
+'############################################################################
+'#
+'#   Sub GenericSendEvent ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the value of a property as a String.  The expected 
+'#      value is processed via <a href="StringUtilities.htm#GetTrimmedQuotedString">GetTrimmedQuotedString</a>.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Case-sensitive name of the object property to verify
+'#       6      the expected string value to get from the property
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub GenericSendEvent()
+    
+    Dim eventString, fullString
+    Dim sArgs 
+    Dim sCurrArg
+    Dim argNum
+    Dim parameter
+    Dim mName
+    Dim callResultObj
+    Dim result
+    
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate bench file specification
+        mName = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if mName = "" then 
+            LogMessage "Missing required named reference"& _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+    
+        'collect all arguments starting from 6
+        sArgs = ""
+        argNum = 6
+        Do
+          sCurrArg = GetTrimmedQuotedField(.inputrecord, argNum, .separator)
+          argNum = argNum + 1
+          if not sCurrArg = "" then
+            if not sArgs = "" then
+              sArgs = sArgs & ","
+            end if
+            sArgs = sArgs & sCurrArg
+          end if 
+        Loop While not sCurrArg = ""
+
+       
+        'set default failure mode    
+        .statuscode = SDNoScriptFailure
+      
+        if sArgs = "" then
+          eventString = mName & sArgs
+        else
+          eventString = mName & "(" & sArgs & ")"
+        end if
+        
+        fullString = "Call .compGUIID." & eventString
+       
+        result = Log.ErrCount
+
+        Execute fullString
+
+        If Log.ErrCount = result then
+            SAFSDebug eventString &" sent to "& .WindowName & ":" & .CompName , DEBUG_INFO
+            LogMessage eventString &" sent to "& .WindowName & ":" & .CompName , GENERIC_MESSAGE, ""
+            .statuscode = SDNoScriptFailure     
+        else
+            SAFSDebug "SENDEVENT failure with TCAFS error. ", DEBUG_DEBUG
+            LogMessage "SENDEVENT failure with TCAFS error. ", FAILED_MESSAGE, .inputrecord         
+         End If   
+        
+    End With        
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericHoverMouse ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to hover the mouse on the component
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD   REQUIRED    CONTENT
+'#      ---   --------    ------------------------------    
+'#       5       NO       Coordination relative to the component, at where the mouse will hover
+'#       6       NO       The time that the mouse will hover, No used here
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 21, 2011
+'# History:
+'#
+'#      SEP 21, 2011    Original Release
+'#
+'############################################################################
+Sub GenericHoverMouse()
+    Dim temp
+    Dim coords
+    Dim x
+    Dim y 
+    Dim hovertime
+    Dim location
+    
+    with otrd
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get the optional parameter coordination
+        temp = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if temp <> "" then 
+            SAFSDebug "Parameter coordination is " & temp, DEBUG_INFO
+            coords = temp
+            'Maybe the coords is given as a field of section [.compname] in the map, try to get it.
+            temp = DDGGetGUIID(.compname, coords, "")
+            if temp <> "" then
+                SAFSDebug "Get coordination from map, it is " & temp, DEBUG_INFO
+                coords = temp
+            end if
+            
+            ConvertCoordination coords, x, y
+        else
+            'Calculate the center of the component
+            'If (-1,-1) is passed to the function HoverMouse of the component
+            'the mouse will be hovered at the center
+            x = -1
+            y = -1
+        end if
+    
+        'get the optional parameter hovertime, not used yet
+        temp = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if temp <> "" then 
+            SAFSDebug "Parameter hovertime is " & temp, DEBUG_INFO
+            hovertime = Trim(temp)
+        else
+            hovertime = 2000
+        end if
+
+        .windowGUIID.Activate
+        .compGUIID.HoverMouse x, y
+
+        if x = -1 and y = -1 then
+            location = "Center"
+        else
+            location = "(" & x & "," & y & ")"
+        end if        
+            
+        SAFSDebug " Hover mouse to component " & .compname & " at " & location, DEBUG_INFO
+        LogMessage UCase(.TestCommand) & " Successful. " _
+                    , PASSED_MESSAGE, "Hover mouse to component " & .compname & " at " & location
+
+        .statuscode = SDNoScriptFailure        
+        
+    End With   
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericLocateScreenImage ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to get the component's location and store to SAFS variable
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD   REQUIRED    CONTENT
+'#      ---   --------    ------------------------------    
+'#       5       YES      Variable name to store component's location
+'#       6       NO       WhomRelativeTo: can be screen or parent
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 22, 2011
+'# History:
+'#
+'#      SEP 22, 2011    Original Release
+'#
+'############################################################################
+Sub GenericLocateScreenImage()
+    Dim temp
+    Dim variable
+    Dim x
+    Dim y
+    Dim w
+    Dim h 
+    Dim relativeToParent
+    Dim location
+    Dim status
+    Dim storeVarOk
+    
+    with otrd
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'On Error Resume Next
+        'get the required parameter VariableName
+        temp = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if temp <> "" then 
+            'If the variable name begin with a ^, we need to get the real name
+            'from the SAFS_VARS service, this has been done by the main Driver routine
+            'variable = DDVProcessExpression(temp)
+            variable = temp
+            SAFSDebug "Parameter variable name is " & variable, DEBUG_INFO
+        else
+            LogMessage "Could not find variable for "& _
+                       UCase(.TestCommand) &" in table "& _
+                       .filename &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+    
+        'get the optional parameter WhomRelativeTo
+        'relativeToParent is false by default, that is 'relative to Screen'
+        relativeToParent = False
+        temp = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if temp <> "" then 
+            SAFSDebug "Parameter WhomRelativeTo is " & temp, DEBUG_INFO
+            temp = Trim(temp)
+            If StringEqualIgnoreCase("parent", temp) Then
+                 relativeToParent = True
+            End If
+        end if
+        'Log.Message "Error message : " & Err.Number
+        
+        
+        'Get the component's coordination
+        If relativeToParent Then
+            x = .compGUIID.Left
+            y = .compGUIID.Top
+        Else
+            x = .compGUIID.ScreenLeft
+            y = .compGUIID.ScreenTop
+        End If
+        w = .compGUIID.Width
+        h = .compGUIID.Height
+
+        '(x,y,w,h)
+        location = "(" & x & "," & y & "," & w & "," & h & ")"    
+        SAFSDebug " Component " & .compname & ": its location is " & location, DEBUG_INFO
+        
+        'Store x, y , w, h to SAFS Variable
+        storeVarOk = True
+        status = DDVSetVariableValue(variable & ".x", CStr(x))
+        If status <> 0 Then storeVarOk = False
+        status = DDVSetVariableValue(variable & ".y", CStr(y))
+        If status <> 0 Then storeVarOk = (storeVarOk and False)
+        status = DDVSetVariableValue(variable & ".w", CStr(w))
+        If status <> 0 Then storeVarOk = (storeVarOk and False)        
+        status = DDVSetVariableValue(variable & ".h", CStr(h))
+        If status <> 0 Then storeVarOk = (storeVarOk and False)
+        
+        If storeVarOk Then
+            LogMessage .TestCommand & " Successful. " _
+                    , PASSED_MESSAGE, "SAFS Variables saved: " & variable & ".x=" & CStr(x) _
+                    & " " & variable & ".y=" & CStr(y) _
+                    & " " & variable & ".w=" & CStr(w) _
+                    & " " & variable & ".h=" & CStr(h) 
+            .statuscode = SDNoScriptFailure         
+        Else
+            LogMessage .TestCommand & " Failed. " _
+                    , FAILED_MESSAGE, "Could NOT save x, y, w, h to variable " & variable          
+        End If
+       
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericIsPropertyExist()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to test if a property exists for the given ojbect.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD   REQUIRED    CONTENT
+'#      ---   --------    ------------------------------    
+'#       5       YES      Property's name
+'#       6       YES      Variable name to store property's existence
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 26, 2011
+'# History:
+'#
+'#      SEP 26, 2011    Original Release
+'#
+'############################################################################
+Sub GenericIsPropertyExist()
+    Dim temp
+    Dim prop 
+    Dim SAFSVariable
+    Dim existence
+    Dim status
+    
+    with otrd
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'On Error Resume Next
+        'get the required parameter property
+        temp = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if temp <> "" then 
+            SAFSDebug "Parameter property is " & prop, DEBUG_INFO
+            prop = temp
+        else
+            LogMessage "Could not find property for "& _
+                       UCase(.TestCommand) &" in table "& _
+                       .filename &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+    
+        'get the required parameter SAFSVariableName
+        'SAFSVariableName is used to store the result of existence of property
+        temp = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if temp <> "" then 
+            SAFSDebug "Parameter SAFSVariableName is " & temp, DEBUG_INFO
+            SAFSVariable = temp
+        else
+            LogMessage "Could not find SAFSVariableName for "& _
+                       UCase(.TestCommand) &" in table "& _
+                       .filename &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+        
+        
+        'Test the existence of property
+        existence = DDGIsGUIPropertyExist(.compGUIID,prop)
+        'Log.Message "Error message : " & Err.Number
+        
+        status = DDVSetVariableValue(SAFSVariable, CStr(existence))
+        If existence Then 
+            temp = " exists."
+        Else
+            temp = " doesn't exist." 
+        End If
+        
+        If status = 0 Then
+            LogMessage .TestCommand & " Successful. " & prop & temp _
+                    , PASSED_MESSAGE, "SAFS Variable saved: " & SAFSVariable & "=" & CStr(existence)
+            .statuscode = SDNoScriptFailure         
+        Else
+            LogMessage .TestCommand & " Failed. " _
+                    , FAILED_MESSAGE, "Could NOT save " & CStr(existence) & " to variable " & SAFSVariable          
+        End If
+       
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericCapturePropertiesToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to capture the properties' name and value to a file.
+'#
+'#      Note, strings have an inherent length limit of 32K.
+'#      
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------   
+'# 
+'#       5      Text filename. Normally, the file would reside in the 
+'#              Project's Datapool\Test directory, if it doesn't exist, a new
+'#              file will be created.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 26, 2011
+'# History:
+'#
+'#      SEP 26, 2011    Original Release
+'#
+'############################################################################
+Sub GenericCapturePropertiesToFile()
+
+    Dim status
+    Dim sResult
+    Dim properties()
+    Dim testdata
+    Dim testfile
+    Dim testpath
+    Dim i
+    
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get the required non blank parameter FileName
+        testfile = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if testfile = "" then 
+            LogMessage "No Test file specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+
+        SAFSDebug "The file name is " & testfile, DEBUG_INFO
+
+        .windowGUIID.Activate
+                
+        sResult = ""
+        status = DDGGetGUIPropertiesString(.compGUIID, properties) 
+        
+        if status <> 0 then
+            LogMessage "Error retrieving properties for " & .TestCommand & " in table "& _
+                   .FileName &" at line "& .LineNumber, _
+                   FAILED_MESSAGE, _
+                   "Error code: "& CStr(status)
+            exit sub
+        end if
+        
+        For i=0 to UBound(properties)
+            sResult = sResult & properties(i) & vbCrLf
+        Next
+
+        testdata = sResult      'testdata contains the properties and values
+
+        testpath = GetTestFileFullPath(testfile)
+        
+        If testpath="" Then
+           SAFSDebug "Can't find the full path for test file '"&testfile&"'", DEBUG_DEBUG
+           LogMessage "Could not determine output testdata filename for "& _
+               .TestCommand &" in table "& .FileName &" at line "& _
+               .LineNumber, FAILED_MESSAGE, _
+               .InputRecord
+           Exit Sub        
+        End If
+     
+        status = WriteToFile2(testpath, testdata, False, "")
+
+        if status <> 0 then 'log test failure.  0 = compare success.
+            LogMessage .CompName &" "& .TestCommand &" Failed. " & _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Output File: " & testpath & ",  Error code: "& CStr(status)
+            exit sub
+        else
+            LogMessage .CompName &" "& .TestCommand &" Succeed." & _
+                       " Properties are wrote to file "& testpath, _
+                       PASSED_MESSAGE, ""
+            .statuscode = SDNoScriptFailure
+        End if
+        
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericVerifyFileToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify the string/byte value of two files.
+'#
+'#      The actual file is a file in Datapool\Test if it is not an absolute file.
+'#      The benchmark file is a file in Datapool\Bench if it is not an absolute file.
+'#      This routine will compare these two files and save a difference file to the
+'#      directory Datapool\Dif if there are some differences.
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the information
+'#      it needs to perform its function (like logging).
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'# INPUT PARAMETERS (from the calling module):
+'#
+'#      isBinary    If this is true, the files will be compared byte by byte.
+'#                  Else, the files will be compared as Ascii Text.
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------   
+'#
+'#       5      Benchmark filename. Normally, the Benchmark file would reside in the 
+'#              Project's Datapool\Bench directory if it is not absolute.
+'#
+'#       6      Actual filename.Normally, the actual file would reside in the 
+'#              Project's Datapool\Test directory if it is not absolute. 
+'#
+'#      [7]     (Optional) Filter MODE to be used on the retrieved property value.
+'#              This is for future implementations that will allow us to 
+'#              filter out dynamic text that we don't want to include in 
+'#              comparisons.  This is NOT currently implemented.
+'#
+'#      [8]     (Optional) Filter OPTIONS to be used in conjunction with any 
+'#              supplied Filter MODE.  This is not currently implemented.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 30, 2011
+'# History:
+'#
+'#      SEP 30, 2011    Original Release
+'#
+'############################################################################
+Sub GenericVerifyFileToFile(isBinary)
+
+    Dim status
+    Dim sResult
+    Dim benchmark
+    Dim actualFile
+    Dim difpath
+    
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate bench file specification
+        benchmark = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if benchmark = "" then 
+            LogMessage "No BENCHMARK specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+    
+        'validate benchmark
+        sResult = FindSQAFile(benchmark)
+        if sResult = "" then
+            LogMessage "Could not find benchmark file for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if         
+
+        benchmark = sResult     'fullpath
+        
+        'get and validate actual file specification
+        actualFile = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if actualFile = "" then 
+            LogMessage "No ACTUAL specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if
+    
+        'validate actual file
+        sResult = FindTestFile(actualFile)
+        if sResult = "" then
+            LogMessage "Could not find actual file for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            exit sub
+        end if         
+
+        actualFile = sResult     'fullpath        
+        
+        'extract and validate future filter MODE here
+        
+        'extract and validate future filter OPTIONS here
+
+        sResult = GetShortFilename(benchmark)
+        if sResult = "" then
+            LogMessage "Could not determine output testdata filename for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   .InputRecord
+            exit Sub
+        end if
+
+        'difpath = Project.Path &"Datapool\Dif\"& sResult
+        difpath = GetDDEDifDirectory() & sResult 
+        
+        'perform any future filtering on testdata (and benchmark?)
+                
+        'compare benchmark to actualFile data
+        If isBinary Then
+            status = Run_NTFileComp_EXE(benchmark, actualFile, difpath, "/B", 3)
+        Else
+            '/L compare as Ascii Text, /U compare as Unicode Text, which to use?
+            status = Run_NTFileComp_EXE(benchmark, actualFile, difpath, "/L", 3)        
+        End If
+        
+        if status <> 0 then 'log failure to execute test.  0 = compare completed.
+            LogMessage "File Compare was unable to successfully execute for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   "FC Error:"& CStr(status) &": "& .InputRecord
+            exit Sub
+        end if
+        
+        status = NTFileCompResult(difpath)
+        if status <> 0 then 'log test failure.  0 = compare success.
+            LogMessage .CompName &" "& .TestCommand &" did NOT match expected benchmark from table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Benchmark at "& benchmark &"; Actual at "& actualFile &"; Dif at "& difpath
+            exit sub
+        else
+            LogMessage .CompName &" "& .TestCommand &" matched "& benchmark, _
+                       PASSED_MESSAGE, ""
+            .statuscode = SDNoScriptFailure
+        End if
+        
+    End With
+    
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericVerifyValues (caseSensitive, contains)
+'#
+'############################################################################
+Sub GenericVerifyValues(caseSensitive, contains)
+
+    Dim status
+    Dim firstValue
+    Dim secondValue
+    Dim suppressfield
+    Dim suppress
+    Dim compareOk
+    Dim compareMessage
+        
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        'get and check for the first value or variable, if it is a variable it should
+        'have been resolved
+        firstValue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if firstValue = "" then
+            LogMessage "No first value specified in table "& _
+                       .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .CompName 
+            exit sub
+        end if
+
+        'get and check for the second value or variable, if it is a variable it should
+        'have been resolved
+        secondValue = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if secondValue = "" then
+            LogMessage "No second value specified in table "& _
+                       .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Could not perform "& .TestCommand &" on object "& _
+                       .CompName 
+            exit sub
+        end if
+    
+        suppress = false
+        'get optional suppress value 
+        suppressfield = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        if AQString.GetLength(suppressfield) > 0 then
+            if AQString.ToUpper(suppressfield) = "SUPPRESSVALUE" then
+                suppress = true
+            end if
+        end if
+        
+        'compare the two values
+        compareOk = false
+        compareMessage = ""
+        If contains Then
+            If caseSensitive Then
+                compareMessage = "contain case-sensitively"
+                compareOk = StringContains(firstValue, secondValue)
+            Else
+                compareMessage = "contain case-insensitively"
+                compareOk = StringContainsIgnoreCase(firstValue, secondValue)
+            End If       
+        Else
+            If caseSensitive Then
+                compareMessage = "match case-sensitively"
+                compareOk = StringEqual(firstValue, secondValue)
+            Else
+                compareMessage = "match case-insensitively"
+                compareOk = StringEqualIgnoreCase(firstValue, secondValue)
+            End If       
+        End if
+
+        'log the test failure
+        if Not compareOk then
+            if suppress then
+                LogMessage .CompName &" "& .TestCommand &" did NOT "& compareMessage &" using '"& secondValue &"'.", _
+                           FAILED_MESSAGE, _
+                           .TestCommand &" failed in file "& .FileName &" at line "& .LineNumber
+ 
+            else
+                LogMessage .testcommand & " fails. '"& firstValue & _
+                           "' did not "  & compareMessage & " '" & secondValue & "'.", _
+                           FAILED_MESSAGE, _
+                           .TestCommand &" failed in file "& .FileName &" at line "& .LineNumber
+            end if
+            exit sub
+        end if
+        
+        'log the test success
+        if suppress then
+            LogMessage .testcommand & " successful using '"& secondValue & "'.", _
+                       PASSED_MESSAGE, ""        
+        else
+            LogMessage .testcommand & " succeeds. '"& firstValue & _
+                       "' "  & compareMessage & " '" & secondValue & "'.", _
+                       PASSED_MESSAGE, ""        
+        end if        
+        .statuscode = SDNoScriptFailure
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub GenericUnimplementedCommand ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to warn that the current command has not been implemented.
+'#
+'#      The routine will first attempt to identify a supported Generic Command
+'#      like VerifyProperty or VerifyPropertyToFile.  If it detects a Generic 
+'#      command then it will attempt to execute it.  This makes these commands 
+'#      available to ComponentFunctions that have not explicitly coded their 
+'#      availability as long as those ComponentFunctions defer to this 
+'#      function when an unrecognized command is found.
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 25, 2006
+'# History:
+'#
+'#      SEP 25, 2006    Original Release
+'#      JUL 01, 2010    (Carl Nagle) Enhanced for SAFS Debug Support
+'#
+'############################################################################
+Sub GenericUnimplementedCommand()
+
+
+        'last ditch effort to try and use the command
+        On Error Resume Next
+        
+        SAFSDebug "GenericMasterFunctions processing: "& otrd.TestCommand, DEBUG_INFO
+        
+        Select Case UCase(otrd.testcommand)
+            
+            Case UCase(GENERIC_VERIFY_PROPERTY_COMMAND)
+            
+                GenericVerifyProperty False
+            
+            Case UCase(GENERIC_ASSIGN_PROPERTY_VARIABLE)
+            
+                GenericAssignPropertyVariable
+            
+            Case UCase(GENERIC_GUI_DOES_EXIST)
+            
+                GenericGUIDoesExist
+            
+            Case UCase(GENERIC_GUI_DOES_NOT_EXIST)
+            
+                GenericGUIDoesNotExist
+            
+            Case UCase(GENERIC_VERIFY_PROPERTY_TO_FILE_COMMAND)
+
+                GenericVerifyPropertyToFile
+            
+            Case UCase(GENERIC_VERIFY_CLIPBOARD_TO_FILE_COMMAND)
+
+                GenericVerifyClipboardToFile
+            
+            Case UCase(GENERIC_VERIFY_CLIPBOARD_VP_COMMAND)
+
+                GenericVerifyClipboardVP
+                
+            Case UCase(GENERIC_INPUTKEYS_COMMAND)
+
+                GenericInputKeys True
+
+            Case UCase(GENERIC_INPUTCHARACTERS_COMMAND)
+
+                GenericInputKeys False                                
+                
+            Case UCase(GENERIC_VERIFY_TAB_ORDER_COMMAND), UCase(GENERIC_VERIFY_TAB_ORDER_SHORTCOMMAND)
+
+                GenericVerifyTabOrder
+                
+            Case UCase(GENERIC_GET_GUI_IMAGE)
+	    
+	              GenericGetGUIImage
+	    
+	          Case UCase(GENERIC_VERIFY_GUI_IMAGE_TO_FILE)
+	    
+                GenericVerifyGUIImageToFile
+      
+            Case UCase(GENERIC_SEND_EVENT_COMMAND)
+
+                GenericSendEvent
+
+            Case UCase(GENERIC_SET_PROPERTY_VALUE_COMMAND)
+
+                GenericSetPropertyValue
+
+            Case UCase(GENERIC_CAPTURE_OBJECT_DATA_TO_FILE)
+
+                GenericCaptureObjectDataToFile
+
+            Case UCase(GENERIC_CAPTURE_PROPERTY_TO_FILE)
+
+                GenericCapturePropertyToFile
+                
+            Case UCase(GENERIC_HOVER_MOUSE)                        
+            
+                GenericHoverMouse
+            
+            Case UCase(GENERIC_LOCATE_SCREEN_IMAGE)
+            
+                GenericLocateScreenImage
+
+            Case UCase(GENERIC_IS_PROPERTY_EXIST)
+            
+                GenericIsPropertyExist
+
+            Case UCase(GENERIC_CAPTURE_PROPERTIES_TO_FILE)
+            
+                GenericCapturePropertiesToFile
+            
+            Case UCase(GENERIC_VERIFY_BINARY_FILE_TO_FILE)
+            
+                GenericVerifyFileToFile True
+
+            Case UCase(GENERIC_VERIFY_FILE_TO_FILE)
+            
+                GenericVerifyFileToFile False
+
+            Case UCase(GENERIC_VERIFY_TEXT_FILE_TO_FILE)
+            
+                GenericVerifyFileToFile False
+                
+            Case UCase(GENERIC_VERIFY_PROPERTY_CONTAINS_COMMAND)
+            
+                GenericVerifyProperty True
+
+            Case UCase(GENERIC_VERIFY_VALUE_CONTAINS)
+            
+                GenericVerifyValues True, True
+                
+            Case UCase(GENERIC_VERIFY_VALUE_CONTAINS_IGNORECASE)
+            
+                GenericVerifyValues False, True
+                
+            Case UCase(GENERIC_VERIFY_VALUES)
+            
+                GenericVerifyValues True, False
+                
+            Case UCase(GENERIC_VERIFY_VALUES_IGNORECASE)
+            
+                GenericVerifyValues False, False
+                                                                                                                                                                                                                               
+            Case Else
+
+                with otrd
+    
+                    .statuscode = CustomDDETestCommand (.testcommand, StepDriverInfo)
+                    
+                    if .statuscode = DDU_SCRIPT_NOT_EXECUTED then
+                        .statuscode = SDScriptWarning
+                        
+                        SAFSDebug "Unimplemented "& UCase(.TestCommand) &" command for "& _
+                               "component "& .CompName &" of Type: "& .CompType, DEBUG_DEBUG
+                        
+                        LogMessage "Unimplemented "& UCase(.TestCommand) & _
+                                   " command for "& "component "& .CompName & _
+                                   " of Type: "& .CompType, _
+                                   WARNING_MESSAGE, .CompType & _
+                                   "Functions or GenericMasterFunctions "& _
+                                   "may not implement "& _
+                                   UCase(.TestCommand) &" at this time."
+                    end if
+                End With
+            
+        End Select
+
+End Sub

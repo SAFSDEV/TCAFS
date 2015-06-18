@@ -1,0 +1,1610 @@
+Option Explicit
+
+'##############################################################################
+'#
+'#    FlexDataGrid.SVB  Library
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on Type=DataGrid objects in 
+'#      Data-Driven Automation.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#  See DataGrid.SVB
+'# 
+'# Orig Author: Lei Wang
+'# Orig   Date: OCT 13, 2011
+'# History:
+'#
+'#      OCT 13, 2011    Original Release
+'#      DEC 06, 2011    (Lei Wang) Modify code to handle '2 content holders' and 'horizontal scroll bar'.
+'#      DEC 23, 2011    (Lei Wang) Modify function getColumnNumber(), clickDataGridCellItem(),
+'#                               getCellText() and getParametersForTextFind()
+'#      JUN 13, 2012    (Lei Wang) Modify function getCellText(): get cell's text through Label property.
+'#      AUG 21, 2013    (Lei Wang) Refactor to move the common Subs to DataGrid
+'#      JAN 08, 2014    (Lei Wang) Modify function getHScrolBar() and getVScrolBar(): 
+'#                               remove the property 'ObjectIdentifier' in search condition.
+'##############################################################################
+
+
+'# SCRIPT CONSTANTS
+' Valid TESTCOMMANDS 
+
+'# PUBLIC DEPENDENCIES
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT LogUtilities_X
+'USEUNIT ApplicationUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT StepDriver_X
+'USEUNIT DataGrid_X
+'USEUNIT DataGrid
+'USEUNIT StringUtilities
+'USEUNIT LogUtilities
+'USEUNIT DDUtilities
+'USEUNIT DDGUIUtilities
+
+'# FORWARD DECLARATIONS
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the ListBaseContentHolder object of flex DataGrid
+'# PARAMETERS:
+'#      dataGrid    The Flex DataGrid object
+'#      index       Flex datagrid may contains multiple ListBaseContentHolder
+'#					This index indicates which ContentHolder is returned.
+'#					Normally, contentHolder 0 is the datagrid's content;
+'#					Normally, contentHolder 1 is the datagrid's row header;
+'# RETURNS:
+'#      The ListBaseContentsHolder object of the flex DataGrid      
+'# History:
+'#      OCT 13, 2011    (Lei Wang) Original Release
+'############################################################################
+Function getListBaseContentHolder(dataGrid, index)
+    Dim proName, proValue
+    Dim contents
+    
+    If index < 0 Then
+        index = 0
+        SAFSDebug "index should not be smaller thant 0", DEBUG_WARN
+    End If
+    
+    proName = "Name"
+    'proValue = "ListBaseContent*"
+    proValue = "ListBaseContentHolder(" & CStr(index) & ")"
+    
+    On Error Resume Next
+    Set contents = dataGrid.FindChild(proName,proValue)
+
+    If Err.Number <> 0 Then
+        SAFSDebug "Can't get the ListBaseContentHolder. Error code: " & Err.Number, DEBUG_WARN
+        Set getListBaseContentHolder = Nothing
+        Exit Function
+    End If
+    
+    Set getListBaseContentHolder = contents 
+        
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The ListBaseContentHolder object of Flex DataGrid object
+'#      rowNo   Integer, The row number of the current table render, 1 based index
+'#      colNo   Integer, The column number of the current table render, 1 based index
+'# RETURNS:
+'#      A datagrid's cell object: DataGridItemRender
+'# History:
+'#      OCT 13, 2011    (Lei Wang) Original Release
+'############################################################################
+Function getGridCellItem(grid, rowNo, colNo)
+    Dim totalRow, totalCol
+    
+    totalRow = grid.FlexObject.listItems.length
+    If (rowNo<1 Or rowNo>totalRow) Then  
+        SAFSDebug "Invalid row index. Failed to click cell [" & CStr(rowNo) & ", " & CStr(colNo) & "]", DEBUG_WARN
+        Set getGridCellItem = Nothing
+        Exit Function
+    End If
+
+    totalCol = grid.FlexObject.listItems.item(rowNo-1).length
+    If (colNo<1 Or colNo>totalCol) Then  
+        SAFSDebug "Invalid column index. Failed to click cell [" & CStr(rowNo) & ", " & CStr(colNo) & "]", DEBUG_WARN
+        Set getGridCellItem = Nothing
+        Exit Function
+    End If
+  
+    'grid.FlexObject.listItems's cell has 0 based index
+    Set getGridCellItem = grid.FlexObject.listItems.item(rowNo-1).item(colNo-1)
+
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the value of datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The Flex DataGrid object
+'#      rowNo   Integer, The row number of the current table render, 1 based index
+'#      colNo   Integer, The column number of the current table render, 1 based index
+'# RETURNS:
+'#      The value of datagrid's cell object
+'# History:
+'#      OCT 24, 2011    (Lei Wang) Original Release
+'############################################################################
+Function getCellItemValue(grid, rowNo, colNo)
+    Dim contentHolder
+    Dim cell
+    Dim x, y
+  
+    getCellItemValue = ""
+    On Error Resume Next
+    'get the ListBaseContentHolder of the DataGrid object.
+    Set contentHolder = getListBaseContentHolder(grid,0)
+    If (contentHolder Is Nothing) or (Not contentHolder.Exists) Then
+        SAFSDebug "Can't get the ListBaseContentHolder.", DEBUG_WARN        
+        Exit Function
+    End If
+        
+    'get cell item
+    Set cell = getGridCellItem(contentHolder, rowNo, colNo)
+    If cell Is Nothing Then
+        SAFSDebug "Can't get cell(" & CStr(rowNo) & "," & CStr(colNo) & ")", DEBUG_WARN
+        Exit Function
+    End If
+    
+    getCellItemValue = getCellText(cell)
+
+    If Err.Number <> 0 Then
+        SAFSDebug "During get value of cell(" & CStr(rowNo) & "," & CStr(colNo) & ")," & _
+                  "Met Error: " & Err.Number, DEBUG_WARN 
+    End If
+        
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the values of a certain column, as an array
+'# PARAMETERS:
+'#      grid                The Flex DataGrid object
+'#      columnIndex         Integer, The column number of the current table render, 1 based index
+'#      indexOfContent      The index of datagrid's ListBaseContentHolder, normally it is given as 0.
+'#                          Normally,
+'#                          ListBaseContentHolder(0) of datagrid will contain the table's content.
+'#                          ListBaseContentHolder(1) of datagrid will contain the table's row header.
+'#                          But this depends on the implementation of datagrid, it is not sure.
+'# RETURNS:
+'#      The values of a certain column, as an array
+'# History:
+'#      OCT 24, 2011    (Lei Wang) Original Release
+'############################################################################
+Function getCellArrayOfColumn(grid, columnIndex, indexOfContent)
+    Dim contentHolder
+    Dim scrollRow
+    Dim pageRow
+    Dim totalRowNumber
+    Dim numberOfScrolledRow
+    Dim maxVScroll, currentVScroll
+    Dim rowOfPreviousPage
+    Dim modelRowNumber
+    Dim values()
+    Dim cell, cellText
+    Dim row
+    
+    Dim scrollBarV, scrollBarH, sbHLeftButton, sbHRightButton
+    Dim canVScroll, canHScroll
+    Dim columnNumberOfFirstColumnOnRender
+
+    On Error Resume Next
+    'get the ListBaseContentHolder of the DataGrid object.
+    Set contentHolder = getListBaseContentHolder(grid,indexOfContent)
+    If (contentHolder Is Nothing) or (Not contentHolder.Exists) Then
+        SAFSDebug "Can't get the ListBaseContentHolder.", DEBUG_ERROR 
+        'what should be set to getFirstColumnArray?       
+        Exit Function
+    End If        
+    
+    totalRowNumber = grid.FlexObject.dataProvider.length
+    If totalRowNumber <= 0 Then
+        SAFSDebug "There are no enough row in the table.", DEBUG_ERROR
+        'what should be set to getFirstColumnArray?        
+        Exit Function    
+    End If
+    Redim values(totalRowNumber-1)
+    
+    'Try each row to match (columns, values)
+    'If table has multiple pages, we need to scroll to each page to find the matched row
+    maxVScroll = grid.FlexObject.maxVerticalScrollPosition
+    scrollRow = 0
+    
+    Set scrollBarV = getVScrolBar(grid)
+    canVScroll = (Not scrollBarV Is Nothing) and scrollBarV.Exists
+
+    Set scrollBarH = getHScrolBar(grid)
+    canHScroll = (Not scrollBarH Is Nothing) and scrollBarH.Exists
+    If canHScroll Then
+        Set sbHLeftButton =  getHScrolBarButton(scrollBarH, True)
+        Set sbHRightButton =  getHScrolBarButton(scrollBarH, False)
+    End If
+    
+    'scroll to the first page
+    If canVScroll Then                     
+        grid.FlexObject.scrollToIndex  0                         
+    End If     
+        
+    pageRow = contentHolder.FlexObject.listItems.length
+    numberOfScrolledRow = pageRow
+    'modelRowNumber is the row number (the number in the model) of the first row in the render
+    modelRowNumber = 0
+    
+    Do
+        currentVScroll = grid.FlexObject.verticalScrollPosition
+        'After the scroll of table, if the rest row is not enough fro one page
+        'there are some rows will rest in the current, it is rowOfPreviousPage
+        rowOfPreviousPage = pageRow - numberOfScrolledRow
+        
+        'we will not retrieve the date repeatly, so we skip the row of previous page
+        For row = rowOfPreviousPage To pageRow -1
+            'get the cell value for each row according to the column index
+            
+            'If the row number exceed the total row number, there are no more row, exit loop
+            If (modelRowNumber+row) >= totalRowNumber Then
+                Exit For
+            End If
+            
+            'If horizontal scroll bar exists, we should make the column visible on the render
+            'then we can compare.
+            Dim column, renderColumn
+            'convert to 0-based index
+            column = columnIndex - 1
+            If canHScroll Then
+                columnNumberOfFirstColumnOnRender = scrollToColumn(scrollBarH, sbHLeftButton, sbHRightButton, column)
+                If columnNumberOfFirstColumnOnRender = column Then
+                    renderColumn = 0
+                Else
+                    renderColumn = column - columnNumberOfFirstColumnOnRender
+                End If
+            Else
+                renderColumn = column
+            End If            
+            
+            'If the column index is bigger than number of column of certain row, set "" to array
+            If renderColumn >= contentHolder.FlexObject.listItems.item(row).length Then
+                values(modelRowNumber+row) = ""
+            Else
+                Set cell = contentHolder.FlexObject.listItems.item(row).item(renderColumn)
+                'cellText = cell.listData.label
+                cellText = getCellText(cell)
+                values(modelRowNumber+row) = cellText            
+            End If
+        Next
+        
+        'If there is no more page for the table, just exit the do-while loop
+        If currentVScroll = maxVScroll Then
+            Exit Do
+        End If
+        
+        'If there are still some pages, sroll to next page, and try to match rows of that page
+        If canVScroll Then             
+            scrollRow = scrollRow + pageRow              
+            grid.FlexObject.scrollToIndex  scrollRow
+                       
+            'get the number of rows have been scrolled
+            numberOfScrolledRow = grid.FlexObject.verticalScrollPosition - currentVScroll
+            modelRowNumber = modelRowNumber + numberOfScrolledRow                          
+        End If 
+
+    Loop While currentVScroll <> maxVScroll    
+    
+    getCellArrayOfColumn = values
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Search the row according to the row values condition, and return the
+'#      matched row number.
+'#      Attention: the row number is the number on the table render (the current page)
+'#                 If the table is scrolled, the row number will be wrong!!!
+'#                 The last parameter 'modelRowNumber' will contains the row number of
+'#                 the total table (not the number of current page)
+'#      If the table contains multiple pages, we need to scroll to the first page
+'#      , then search for the row page after page.
+'# PARAMETERS:
+'#      grid            In: The Flex DataGrid object
+'#      columns         In: An array of column label or column number
+'#      values          In: An array of string vlaues, to be matched with the cell value
+'#      ignoreCase      In: Boolean, if it is true, match two string case-insensitively
+'#      contains        In: Boolean, if it is true, verify if the cell value contains the value in array
+'#                      of the given parameter values
+'#      modelRowNumber  Out: the real row number of the whole table, 1-based
+'#      indexOfContent  In: The index of datagrid's ListBaseContentHolder, normally it is given as 0.
+'#                          Normally,
+'#                          ListBaseContentHolder(0) of datagrid will contain the table's content.
+'#                          ListBaseContentHolder(1) of datagrid will contain the table's row header.
+'#                          But this depends on the implementation of datagrid, it is not sure.
+'# RETURNS:
+'#      Integer, the row number matching the row values condition, the row number is 1-based.
+'#      A negative number if the row can' be found
+'#      This row number is relative to the current render. You cat get the absolute row number
+'#      (model row number) from the Out parameter 'modelRowNumber'
+'# ERRORS:
+'#       none
+'# History:
+'#      OCT 24, 2011    (Lei Wang) Original Release
+'#      DEC 02, 2011    (Lei Wang) Treat the horizontal scroll bar 
+'############################################################################
+Function findMatchRow(grid, columns, values, ignoreCase, contains, modelRowNumber, indexOfContent)
+    Dim pageRow, totalCol, row, column, renderColumn, index, valuesLength 
+    Dim contentHolder, value, cellText, cell
+    Dim maxVScroll, currentVScroll, scrollRow
+    Dim numberOfScrolledRow
+    
+    Dim maxHScroll, currentHScroll, scrollCol
+    Dim scrollHBar
+    Dim numberOfScrolledCol    
+    
+    Dim scrollBarV, scrollBarH, sbHLeftButton, sbHRightButton
+    Dim canVScroll, canHScroll
+    Dim columnNumberOfFirstColumnOnRender
+    
+    modelRowNumber = 0
+    numberOfScrolledRow = 0
+    
+    On Error Resume Next
+    'Verify if array columns and values has the same length
+    If Not (UBound(columns) = UBound(values)) Then
+        SAFSDebug "The length of columns array doesn't equal that of values array.", DEBUG_ERROR
+        findMatchRow = -1
+        Exit Function    
+    End If
+    
+    Set contentHolder = getListBaseContentHolder(grid,indexOfContent)
+    If (contentHolder Is Nothing) or (Not contentHolder.Exists) Then 
+        SAFSDebug "Can't get contentHlder of DataGrid.", DEBUG_ERROR
+        findMatchRow = -2
+        Exit Function
+    End If
+    
+    'convert array columns: if this array contains column label, find the index of that label
+    'and store that column index in the array
+    'If the table contains 'row header' which is ListBaseContentHolder(1), the array columns may contain
+    'the wrong column number.
+    'column-number is calculated from datagrid.FlexOjbect.columns which contains the header name of
+    'all ListBaseContentHolder
+    For index = 0 To UBound(columns)     
+        columns(index) = DataGrid.getColumnNumber(grid, columns(index), ignoreCase, contains, False)        
+
+        If columns(index) = -1 Then
+            findMatchRow = -3
+            Exit Function           
+        End If
+
+    Next
+    
+    'Try each row to match (columns, values)
+    'If table has multiple pages, we need to scroll to each page to find the matched row
+    maxVScroll = grid.FlexObject.maxVerticalScrollPosition
+    'Set scrollBarV = grid.FindChild("ObjectType","VScrollBar")
+    Set scrollBarV = getVScrolBar(grid)
+    canVScroll = (Not scrollBarV Is Nothing) and scrollBarV.Exists
+
+    Set scrollBarH = getHScrolBar(grid)
+    canHScroll = (Not scrollBarH Is Nothing) and scrollBarH.Exists
+    If canHScroll Then
+        Set sbHLeftButton =  getHScrolBarButton(scrollBarH, True)
+        Set sbHRightButton =  getHScrolBarButton(scrollBarH, False)
+    End If
+        
+    scrollRow = 0
+    'scroll to the first page
+    If canVScroll Then                     
+        grid.FlexObject.scrollToIndex  0                         
+    End If 
+        
+    pageRow = contentHolder.FlexObject.listItems.length
+    valuesLength = UBound(values)+1
+    
+    Do
+        currentVScroll = grid.FlexObject.verticalScrollPosition
+        
+        For row = 0 To pageRow -1
+            'get the total column number of this row
+            totalCol = contentHolder.FlexObject.listItems.item(row).length
+        
+            'If there are enough columns in the datagrid to match with the given vlaues
+            'or there is a scroll bar, then try to match this row, 
+            If valuesLength <= totalCol or canHScroll Then
+                'Inner For
+                For index = 0 To valuesLength -1
+                    column = columns(index) - 1
+                    value = values(index)
+                    
+                    'If horizontal scroll bar exists, we should make the column visible on the render
+                    'then we can compare.
+                    If canHScroll Then
+                        columnNumberOfFirstColumnOnRender = scrollToColumn(scrollBarH, sbHLeftButton, sbHRightButton, column)
+                        If columnNumberOfFirstColumnOnRender = column Then
+                            renderColumn = 0
+                        Else
+                            renderColumn = column - columnNumberOfFirstColumnOnRender
+                        End If
+                    Else
+                        renderColumn = column
+                    End If
+                    
+                    Set cell = contentHolder.FlexObject.listItems.item(row).item(renderColumn)
+                    'cellText = cell.listData.label
+                    cellText = getCellText(cell)
+                    If Not StringMatch(cellText, value,ignoreCase, contains) Then
+                        'Exit the inner for loop, try to mathc the next row
+                        Exit For'Inner For
+                    Else
+                        'If the last value match with the cell value, this means
+                        'we find the matched row
+                        If index = valuesLength - 1 Then
+                            findMatchRow = row + 1
+                            modelRowNumber = modelRowNumber + findMatchRow
+                            SAFSDebug "Found the matched row: renderRowNumber=" & CStr(findMatchRow) & _
+                                      "; modelRowNumber=" & CStr(modelRowNumber), DEBUG_INFO                            
+                            Exit Function
+                        End If                
+                    End If                              
+                Next 
+            End If
+        Next
+        
+        'If program comes here, this means that no row has been matched in the current page.
+        
+        'If there is no more page for the table, just exit the do-while loop
+        If currentVScroll = maxVScroll Then
+            Exit Do
+        End If
+        
+        'If there are still some pages, sroll to next page, and try to match rows of that page
+        If canVScroll Then             
+            scrollRow = scrollRow + pageRow              
+            grid.FlexObject.scrollToIndex  scrollRow
+                       
+            'get the number of rows have been scrolled
+            numberOfScrolledRow = grid.FlexObject.verticalScrollPosition - currentVScroll
+            modelRowNumber = modelRowNumber + numberOfScrolledRow                          
+        End If 
+
+    Loop While currentVScroll <> maxVScroll
+
+    SAFSDebug "Can't find matched row", DEBUG_INFO
+    modelRowNumber = -1
+    findMatchRow = -4
+    
+End Function
+
+'############################################################################
+'#  Function getDataGridHeader(dataGrid, indexOfGridHeader)
+'# DESCRIPTION:
+'#      Get the DataGridHeader object of flex DataGrid
+'# PARAMETERS:
+'#      dataGrid            The Flex DataGrid object
+'#      indexOfGridHeader   The flex datagrid may has multiple header container, 
+'#                          this index indicates which one is returned.
+'#                          Normally, 0 is the usually used.
+'# RETURNS:
+'#      The DataGridHeader object of the flex DataGrid      
+'# ERRORS:
+'#       none
+'# History:
+'#      OCT 19, 2011    (Lei Wang) Original Release
+'#      DEC 06, 2011    (Lei Wang) Add parameter indexOfGridHeader to function
+'############################################################################
+Function getDataGridHeader(dataGrid, indexOfGridHeader)
+    Dim proName, proValue
+    Dim header
+    
+    If indexOfGridHeader < 0 Then
+        indexOfGridHeader = 0
+        SAFSDebug "indexOfGridHeader should not be smaller thant 0", DEBUG_WARN
+    End If
+
+    proName = "Name"
+    'proValue = "DataGridHeader*"
+    proValue = "*DataGridHeader("& CStr(indexOfGridHeader) &")"
+    
+    On Error Resume Next
+    Set header = dataGrid.FindChild(proName,proValue)
+
+    If Err.Number <> 0 Then
+        SAFSDebug "Can't get the DataGridHeader. Error code: " & Err.Number, DEBUG_WARN
+        Set getDataGridHeader = Nothing
+        Exit Function
+    End If
+    
+    Set getDataGridHeader = header 
+        
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the DataGridItemRenderer object of DataGridHeader
+'# PARAMETERS:
+'#      header    The Flex DataGridHeader object
+'#      index     The column index, 1-based.
+'# RETURNS:
+'#      The DataGridItemRenderer object of the DataGridHeader      
+'# ERRORS:
+'#       none
+'# History:
+'#      OCT 19, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getDataGridHeaderItem(header,index)
+    Dim proName, proValue
+    Dim headerItem
+    
+    proName = "Name"
+    proValue = "*DataGridItemRenderer(" & CStr(index-1) & ")"
+    
+    On Error Resume Next
+    Set headerItem = header.FindChild(proName,proValue)
+
+    If Err.Number <> 0 Then
+        SAFSDebug "Can't get the DataGridHeaderItem. Error code: " & Err.Number, DEBUG_WARN
+        Set getDataGridHeaderItem = Nothing
+        Exit Function
+    End If
+    
+    Set getDataGridHeaderItem = headerItem 
+        
+End Function
+
+'############################################################################
+'# PARAMETERS:
+'#      table               The DataGrid object
+'#      colIdx              The column index, 0-based
+'#      getRenderValue      The boolean, get the render value or model value.
+'#                          'model value' for click. Only used for Java domain.
+'# RETURNS:
+'#      String, the text of 'column header' according to column index
+'# History:
+'#      AUG 21, 2013    (Lei Wang) Original Release
+'############################################################################
+Function GetColumnHeader(table, colIdx, getRenderValue)
+    Dim headers
+    On Error Resume Next
+    
+    headers = getColumnHeaders(table)     
+    GetColumnHeader = headers(colIdx)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get an array of datagrid's column headers (DataGridColumn object)
+'# PARAMETERS:
+'#      grid    The Flex DataGrid object
+'# RETURNS:
+'#      An array of datagrid's column headers 
+'# History:
+'#      OCT 19, 2011    (Lei Wang) Original Release
+'#      AUT 20, 2013    (Lei Wang) Modify to return an array of 'text string' instead of Object
+'############################################################################
+Function getColumnHeaders(grid)
+    Dim headers()
+    Dim endIndex
+    Dim column, startIndex, index
+    Dim columnObj
+    
+    On Error Resume Next
+    'If datagrid contains ListBaseContentHolder(1) as row header, 
+    'then the first several values of grid.FlexObject.columns are for row header, 
+    'they should not be considered as the datagrid's column header
+    endIndex = grid.FlexObject.columnCount-1
+    If hasRowHeader(grid, startIndex) Then
+        SAFSDebug "This datagrid contains row header column, containing "&startIndex&" columns.", DEBUG_DEBUG
+    Else
+        startIndex = 0
+    End If
+    If startIndex > endIndex Then
+        SAFSDebug "This datagrid doesn't contain any more columns except 'row header column'. ", DEBUG_ERROR
+        Exit Function
+    End If
+    
+    ReDim headers(endIndex-startIndex)
+    
+    index = 0
+    For column = startIndex to endIndex
+        'The grid.FlexObject.columns.item(column) is DataGridColumn, its property 'headerText' is the text value
+        Set columnObj = grid.FlexObject.columns.item(column)
+        If aqObject.IsSupported(columnObj, "headerText") Then
+            If IsObject(columnObj.headerText) Then
+                SAFSDebug "columnObj.headerText is an object, need new code to get 'header text' from it.", DEBUG_WARN
+            Else
+                headers(index) = columnObj.headerText
+            End If
+        Else
+            SAFSDebug "column object is "&columnObj.className&", it doesn't have propety headerText", DEBUG_WARN
+        End If
+        index = index + 1
+    Next
+    
+    If Err.Number = 0 Then
+        getColumnHeaders = headers
+    Else
+        SAFSDebug "Can't get headers, Met Error: " & Err.Number, DEBUG_WARN
+    End If
+        
+End Function
+
+'#      columnNumber        The index, 0-based
+'#      get the column object in a table according to the index
+Function GetColumnObject(grid, columnNumber)
+    On Error Resume Next
+    Set GetColumnObject = grid.FlexObject.columns.item(columnNumber)
+    If Err.Number <> 0 or Not IsObject(GetColumnObject) Then
+        SAFSDebug "Can't get column object, Met Error: " & Err.Number, DEBUG_WARN
+    End If
+End Function
+
+'#      Decide if cell(rowNumber, columnNumber) is editable
+'#      grid            The DataGrid object
+'#      rowNumber       The row number, 1-based, not used here
+'#      columnNumber    The column number, 1-based
+Function isCellEditable(grid, rowNumber, columnNumber)
+    Dim rc
+    Dim editable
+    
+    'Flex use the property 'editable' to control if user can edit a cell
+    'Flex DataGrid has this property, it controls all the cells' editablity.
+    'Flex DataGridColumn also has this property, it control the editablity 
+    'of the cells of this column.
+    'Only both of them are true, the cell can be edited.
+    'The row number has no effect on the editablity of a cell???
+        
+    'But if the 'editable' of DataGridColumn is False, Flex programer can
+    'set property 'editedItemPosition' to make the cell editable
+    'datagrid.editedItemPosition = {columnIndex:column, rowIndex:datagrid.selectedIndex}
+    'See example http://blog.classsoftware.com/index.cfm/2007/6/11/Flex-Datagrid-Editing-Cells
+    'The editablity is changed dynamically, how to handle this situation???
+            
+    'Get the editablity of DataGrid
+    rc = DDGGetGUIPropertyString (grid.FlexObject, PROPERTY_EDITABLE, editable)
+    If rc <> 0 Then
+        SAFSDebug "Can't get property '"&PROPERTY_EDITABLE&"' for Flex DataGrid, Met Error: " & Err.Number, DEBUG_WARN
+        isCellEditable = False
+        Exit Function
+    End If
+
+    isCellEditable = editable and DataGrid.isColumnEditable(grid, columnNumber)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Click/DoubleClick/RightClick datagrid's cell(rowNo, colNo)
+'#      If the row is not visible on the current page, this function
+'#      will scroll to that row.
+'# PARAMETERS:
+'#      grid            The Flex DataGrid object
+'#      row             Integer, The row number of the whole table, 1 based index
+'#      column          Integer, The column number  of the whole table, 1 based index
+'#      doubleClick     If true, double click cell. Otherwise, click cell.
+'#      rightClick      If true, right click cell; Otherwise, left click.
+'#      keys            TShiftKey
+'#                      TShiftKey is an enumerated type that indicates whether 
+'#                      the SHIFT, CTRL or ALT key is pressed while executing a Click, DblClick
+'#                      TShiftKey defines the following constants for shift keys:
+'#
+'#                      Constant  Description  
+'#                      skShift   The SHIFT key is pressed.  
+'#                      skAlt     The ALT key is pressed.  
+'#                      skCtrl    The CTRL key is pressed.  
+'#                      skNoShift Neither CTRL, SHIFT nor ALT pressed.
+'# 
+'#                      TShiftKey values are additive. To specify that several keys are pressed at once, 
+'#                      combine the needed constants using the bitwise logical OR operator. For example:      
+'#                      Call MyObject.Click (10, 10, skCtrl Or skShift)
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      0       Success
+'#      -1      Can't get the cell Item
+'#              other error code from Err.Number
+'# History:
+'#      OCT 27, 2011    (Lei Wang) Original Release
+'#      DEC 02, 2011    (Lei Wang) Treat the horizontal scroll bar
+'#
+'############################################################################
+Function clickDataGridCellItem(grid, row, column, doubleClick, rightClick, keys)
+    Dim contentHolder
+    Dim totalRowNumber, pageRow
+    'scrollRow is the row that we want to scroll to, 0-based
+    Dim scrollRow, maxScrollPosition, scrollPosition 
+    Dim isLastRow
+    'renderRow is the row number of datagrid render, 1-based
+    'renderColumn is the column number of datagrid render, 1-based 
+    Dim renderRow, renderColumn    
+
+    Dim colIndexOfFirstColOnRender
+    Dim scrollBarH, sbHLeftButton, sbHRightButton
+    Dim canHScroll
+        
+    On Error Resume Next
+    Set contentHolder = getListBaseContentHolder(grid,0)
+    If (contentHolder Is Nothing) or (Not contentHolder.Exists) Then
+        SAFSDebug "Can't get the ListBaseContentHolder.", DEBUG_ERROR
+        clickDataGridCellItem = -1
+        Exit Function
+    End If
+
+    Set scrollBarH = getHScrolBar(grid)
+    canHScroll = (Not scrollBarH Is Nothing) and scrollBarH.Exists
+    'If horizontal bar exist, scroll horizontally to make the 'wanted column' to be visible
+    If canHScroll Then
+        Set sbHLeftButton =  getHScrolBarButton(scrollBarH, True)
+        Set sbHRightButton =  getHScrolBarButton(scrollBarH, False)
+        colIndexOfFirstColOnRender = scrollToColumn(scrollBarH, sbHLeftButton, sbHRightButton, column-1)
+        If colIndexOfFirstColOnRender = (column -1) Then
+            renderColumn = 1
+        Else
+            renderColumn = column - colIndexOfFirstColOnRender
+        End If
+    Else
+        renderColumn = column
+    End If
+            
+    'Scroll to the first row of first page
+    grid.FlexObject.scrollToIndex  0
+    totalRowNumber = grid.FlexObject.dataProvider.length
+    If row = totalRowNumber Then
+        isLastRow = True
+    Else
+        isLastRow = False
+    End If
+   
+    pageRow = contentHolder.FlexObject.listItems.length
+    maxScrollPosition = grid.FlexObject.maxVerticalScrollPosition
+    
+    'We need to scroll to make the row visible on the current table render
+    'If the row is bigger than the page number, the row is not in the current page
+    'so it is not visible, we need scroll
+    If row > pageRow Then
+        SAFSDebug "Scroll to make this row visible on the page.", DEBUG_INFO
+            
+        'If there are rows more than one page after the row we want to click
+        'we scroll to the page with target-row as the first row
+        'This is the most case to be met
+        If (row+pageRow) < totalRowNumber Then
+            scrollRow = row - 1 
+            grid.FlexObject.scrollToIndex scrollRow
+            renderRow = 1
+        'If there are no enough rows more than one page after the row we want to click
+        'we scroll to the page with target-row as the last row            
+        Else
+            'Sometimes, the last row is covered by the horizontal scroll bar
+            'We just can't click on the cell, so we need to scroll to make the target-row
+            'as the second last row in the page. But if the target-row is the last row
+            'in the whole table, we can't make it as the second last row!!!            
+            If isLastRow Then
+                scrollRow = row - pageRow
+                renderRow = pageRow 
+            Else
+                scrollRow = row - pageRow + 1
+                renderRow = pageRow - 1                
+            End If
+                
+            scrollPosition = grid.FlexObject.verticalScrollPosition
+            grid.FlexObject.scrollToIndex scrollRow
+            
+            'After calling scrollToIndex, if the scrollPosition doesn't change
+            'this means the scroll bar didn't move.
+            'the reason is that the row we want to scroll to is visible, we should
+            'make it invisible first, then scroll to it
+            If scrollPosition = grid.FlexObject.verticalScrollPosition Then
+                'make the row we want to scroll to becomes invisible
+                grid.FlexObject.scrollToIndex totalRowNumber
+                'scroll to the row
+                grid.FlexObject.scrollToIndex scrollRow
+            End If
+
+            'If the target-row is the last row in the whole table, we have scrolled down
+            'to make the target-row as the last row on the table render. As the last
+            'row on the table render may be covered by horizontal bar, we still risk
+            'to be not able to click, so we test if we can still scroll down, if we
+            'can, we will scroll down one position
+            If isLastRow and grid.FlexObject.verticalScrollPosition < maxScrollPosition Then
+                SAFSDebug "May need to scroll one down.", DEBUG_INFO
+                'make the next row becomes invisible
+                grid.FlexObject.scrollToIndex totalRowNumber
+                'scroll to the next row
+                grid.FlexObject.scrollToIndex (scrollRow+1)
+                'What is the row number?
+                renderRow = pageRow - 1                     
+            End If                
+
+        End If
+    'the row is the last row of the first page, as it is the last row of page
+    'it may be hidden by horizontal bar    
+    ElseIf row = pageRow Then
+        'To make sure the the last row of the page can be clicked
+        'scroll table to make this last row as the second last row in the page if possible
+        If grid.FlexObject.verticalScrollPosition < maxScrollPosition Then
+            SAFSDebug "Scroll to make the last row visible on the page.", DEBUG_INFO
+            scrollRow = 1
+            renderRow = pageRow - 1
+            
+            scrollPosition = grid.FlexObject.verticalScrollPosition
+            grid.FlexObject.scrollToIndex scrollRow            
+            'After calling scrollToIndex, if the scrollPosition doesn't change
+            'this means the scroll bar didn't move.
+            'The reason is that the row we want to scroll to is visible, we should
+            'make it invisible first, then scroll to it
+            If scrollPosition = grid.FlexObject.verticalScrollPosition Then
+                'make the row we want to scroll to becomes invisible
+                grid.FlexObject.scrollToIndex totalRowNumber
+                'scroll to the row
+                grid.FlexObject.scrollToIndex scrollRow
+            End If                         
+        End If
+    'The row is on the currrent table
+    Else
+        renderRow = row             
+    End If
+                
+    'click on cell    
+    clickDataGridCellItem = clickRenderCellItem(contentHolder, renderRow, renderColumn, doubleClick, rightClick, keys)
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Click/DoubleClick/RightClick datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The ListBaseContentHolder object of Flex DataGrid object
+'#      rowNo   Integer, The row number, 1 based index
+'#      colNo   Integer, The column number, 1 based index
+'#      doubleClick     If true, double click cell. Otherwise, click cell.
+'#      rightClick      If true, right click cell; Otherwise, left click.
+'#      keys            TShiftKey
+'#                      TShiftKey is an enumerated type that indicates whether 
+'#                      the SHIFT, CTRL or ALT key is pressed while executing a Click, DblClick
+'#                      TShiftKey defines the following constants for shift keys:
+'#
+'#                      Constant  Description  
+'#                      skShift   The SHIFT key is pressed.  
+'#                      skAlt     The ALT key is pressed.  
+'#                      skCtrl    The CTRL key is pressed.  
+'#                      skNoShift Neither CTRL, SHIFT nor ALT pressed.
+'# 
+'#                      TShiftKey values are additive. To specify that several keys are pressed at once, 
+'#                      combine the needed constants using the bitwise logical OR operator. For example:      
+'#                      Call MyObject.Click (10, 10, skCtrl Or skShift)
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      0       Success
+'#      -1      Can't get the cell Item
+'#              other error code from Err.Number
+'# History:
+'#      OCT 13, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function clickRenderCellItem(grid, rowNo, colNo, doubleClick, rightClick, keys)
+    Dim cell
+    Dim x, y
+    
+    On Error Resume Next
+    
+    'get cell item
+    Set cell = getGridCellItem(grid, rowNo, colNo)
+    If cell Is Nothing Then
+        clickRenderCellItem = -1
+        SAFSDebug "Can't get cell(" & CStr(rowNo) & "," & CStr(colNo) & ")", DEBUG_ERROR
+        Exit Function
+    End If
+    
+    'calculate the point to click at
+    x = cell.x + cell.width/2
+    y = cell.y + cell.height/2
+    
+    'How to test if keys is correctly set?
+    
+    If doubleClick Then
+        If rightClick Then
+            grid.DblClickR x, y, keys
+        Else
+            grid.DblClick x, y, keys 
+        End If    
+    Else
+        If rightClick Then
+            grid.ClickR x, y, keys
+        Else
+            grid.Click x, y, keys 
+        End If
+    End If
+
+    If Err.Number <> 0 Then
+        SAFSDebug "During click cell(" & CStr(rowNo) & "," & CStr(colNo) & "), Met Error: " & Err.Number, DEBUG_WARN 
+    End If
+    
+    clickRenderCellItem = Err.Number
+        
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Click/DoubleClick/RightClick datagrid's header(colNo)
+'# PARAMETERS:
+'#      grid            The Flex DataGrid object
+'#      colNo           Integer, The column number, 1 based index
+'#      doubleClick     If true, double click. Otherwise, single click.
+'#      rightClick      If true, right click; Otherwise, left click.
+'#      keys            TShiftKey
+'#                      TShiftKey is an enumerated type that indicates whether 
+'#                      the SHIFT, CTRL or ALT key is pressed while executing a Click, DblClick
+'#                      TShiftKey defines the following constants for shift keys:
+'#
+'#                      Constant  Description  
+'#                      skShift   The SHIFT key is pressed.  
+'#                      skAlt     The ALT key is pressed.  
+'#                      skCtrl    The CTRL key is pressed.  
+'#                      skNoShift Neither CTRL, SHIFT nor ALT pressed.
+'# 
+'#                      TShiftKey values are additive. To specify that several keys are pressed at once, 
+'#                      combine the needed constants using the bitwise logical OR operator. For example:      
+'#                      Call MyObject.Click (10, 10, skCtrl Or skShift)
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      0       Success
+'#      -1      The header Item's index is wrong
+'#      -2      Can't get the DataGridHeader object
+'#      -3      Can't get the DataGridItemRenderer object 
+'#              other error code from Err.Number
+'# History:
+'#      OCT 19, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function clickHeader(grid,colNo, doubleClick, rightClick, keys)
+    Dim gridHeader
+    Dim headerItem
+    Dim x, y
+  
+    On Error Resume Next
+    
+    If colNo<1 Or colNo>grid.FlexObject.columnCount Then
+        clickHeader = -1
+        SAFSDebug "The column number: " & CStr(colNo) & _
+                  " exceeds the max column count: " & CStr(grid.FlexObject.columnCount) & _
+                  "; Or it is smaller than 1.", DEBUG_ERROR
+        Exit Function    
+    End If
+    
+    'get header item
+    'Set headerItem = grid.FlexObject.columns.item(colNo-1)
+    'If headerItem Is Nothing Then
+    '    clickHeader = -1
+    '    SAFSDebug "Can't get header(" & CStr(colNo) & ")", DEBUG_ERROR
+    '    Exit Function
+    'End If
+
+    'grid.FlexObject.columns.item can't provide the coordination (x,y)
+    'so the click action can't be performed. So try to get the render
+    'from the GridHeader        
+    'get DataGridHeader object from DataGrid    
+    Set gridHeader = getDataGridHeader(grid,0)
+    If gridHeader Is Nothing Then
+        clickHeader = -2
+        SAFSDebug "Can't get the DataGridHeader object.", DEBUG_ERROR
+        Exit Function    
+    End If
+    
+    'get DataGridItemRenderer object from DataGridHeader   
+    Set headerItem = getDataGridHeaderItem(gridHeader,colNo)
+    If headerItem Is Nothing Then
+        clickHeader = -3
+        SAFSDebug "Can't get the DataGridItemRenderer object.", DEBUG_ERROR
+        Exit Function    
+    End If    
+    
+    'calculate the point to click at
+    x = headerItem.FlexObject.x + headerItem.FlexObject.width/2
+    y = headerItem.FlexObject.y + headerItem.FlexObject.height/2
+    
+    'How to test if keys is correctly set?
+    
+    If doubleClick Then
+        If rightClick Then
+            grid.DblClickR x, y, keys
+        Else
+            grid.DblClick x, y, keys 
+        End If    
+    Else
+        If rightClick Then
+            grid.ClickR x, y, keys
+        Else
+            grid.Click x, y, keys 
+        End If
+    End If
+
+    If Err.Number <> 0 Then
+        SAFSDebug "During click header(" & CStr(colNo) & ") Met Error: " & Err.Number, DEBUG_WARN 
+    End If
+    
+    clickHeader = Err.Number
+        
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get an 2-dimensions array of datagrid's cell value, the range is
+'#      limited by parameters: row, column, rows, columns
+'# PARAMETERS:
+'#      grid    In      The Flex DataGrid object
+'#      row     In      The row number from where to begin to capture, 1-based index
+'#      column  In      The column number from where to begin to capture, 1-based index
+'#      rows    In      The number of rows to read from the begin row
+'#      columns In      The number of column to read from the begin column
+'#      data    Out     The 2-dimension array to contain the datagrid's cell values
+'# History:
+'#      NOV 29, 2011    (Lei Wang)    Add code to handle the horizontal scroll bar
+'#                                  If vertical scroll bar exist also, we will read all rows vertically, and
+'#                                  we come back to the first row, scroll to next columns and read all rows of
+'#                                  those columns, and so on.
+'############################################################################
+Function getDataGridCellRange(grid, row, column, rows, columns, data)
+    Dim contentHolder
+    'totalRowNumber is the total number of rows of the whole datagrid
+    'totalColNumber is the total number of columns of one row in current datagrid render
+    'pageRow it the number of rows in one page
+    Dim totalRowNumber, totalColNumber, pageRow
+    'numberOfScrolledRow is the number of rows have been scrolled
+    'maxVScrollPosition is the max veritcal scroll position
+    'currentVScroll is the current vertical scroll position
+    dim numberOfScrolledRow, maxVScrollPosition, currentVScroll
+    'startRow, endRow, renderStartColumn, renderEndColumn are index on table render
+    Dim startRow, endRow, renderStartColumn, renderEndColumn
+    
+    Dim expectedStartRow
+    'rowi, columni are row and column number of datagrid render
+    Dim rowi, columni
+    'number of rows to read
+    Dim restRows
+    Dim cell
+    'dataRowi, dataColi are row and column number of buffer data to put cell value
+    'dataStartColi is the column number of buffer data from where we begin to store value 
+    Dim dataRowi, dataColi, dataStartColi
+    'scrollRow is the row number that we want to scroll to
+    Dim scrollRow
+    
+    Dim scrollBarV, scrollBarH, sbHLeftButton, sbHRightButton
+    Dim canVScroll, canHScroll, finishReadColumn
+    'nextColumnIndex is the column index (of whole datagrid) to begin to read
+    'firstRenderColumnModelIndex is the column index (of whole datagrid) of first column on current render
+    Dim nextColumnIndex, firstRenderColumnModelIndex
+    'readedColumns is the number of columns have been readed
+    'restColumns is the number of columns to read
+    Dim readedColumns, restColumns  
+
+    On Error Resume Next
+    If row<1 or column<1 Then
+        SAFSDebug "The row and column is 1-based index.", DEBUG_ERROR
+        getDataGridCellRange = -1
+        Exit Function
+    End If
+    
+    Redim data(rows-1,columns-1)
+    
+    Set contentHolder = getListBaseContentHolder(grid,0)
+    If (contentHolder Is Nothing) or (Not contentHolder.Exists) Then
+        SAFSDebug "Can't get the ListBaseContentHolder.", DEBUG_ERROR
+        getDataGridCellRange = -1
+        Exit Function
+    End If
+            
+    'Initialize some variables
+    'Set scrollBarV = grid.FindChild("ObjectType","VScrollBar")
+    Set scrollBarV = getVScrolBar(grid)
+    canVScroll = (Not scrollBarV Is Nothing) and scrollBarV.Exists
+
+    Set scrollBarH = getHScrolBar(grid)
+    canHScroll = (Not scrollBarH Is Nothing) and scrollBarH.Exists
+    If canHScroll Then
+        Set sbHLeftButton =  getHScrolBarButton(scrollBarH, True)
+        Set sbHRightButton =  getHScrolBarButton(scrollBarH, False)
+    End If
+    finishReadColumn = False  
+      
+    totalRowNumber = grid.FlexObject.dataProvider.length
+    pageRow = contentHolder.FlexObject.listItems.length
+    maxVScrollPosition = grid.FlexObject.maxVerticalScrollPosition
+    
+    'convert column index to 0-based
+    nextColumnIndex = column-1
+    dataStartColi = 0
+    restColumns = columns
+    
+    If canHScroll Then
+        firstRenderColumnModelIndex = scrollToColumn(scrollBarH, sbHLeftButton, sbHRightButton, nextColumnIndex)
+        If firstRenderColumnModelIndex = nextColumnIndex Then
+            renderStartColumn = 0
+        Else
+            renderStartColumn = nextColumnIndex - firstRenderColumnModelIndex
+        End If
+    Else
+        renderStartColumn = nextColumnIndex
+    End If
+    
+    'Loop of columns: horizontal scroll bar
+    Do
+        restRows = rows
+        dataRowi = 0
+        readedColumns = 0
+        
+        'Scroll to the first row of first page
+        grid.FlexObject.scrollToIndex  0
+            
+        'Scroll to the target row where we begin to read. If the nuber of rows
+        'after the target row is more than one page, the target row will be the first
+        'row on the page; otherwise it will NOT be the first row on the
+        'page, we need to calculate its row number
+        scrollRow = row - 1
+        grid.FlexObject.scrollToIndex scrollRow
+        numberOfScrolledRow = grid.FlexObject.verticalScrollPosition - 0
+    
+        'expectedStartRow will be the expected index of traget row on render where we
+        'begin to read
+        'Only for the first time of scroll, the expectedStartRow is (row Mod pageRow) - 1
+        'After the first scroll, if we continue to scroll, the expectedStartRow will always be 0: Why?
+        'the reason that we continue to scroll is that there are no enough rows to read on this page,
+        'we need to read the first row on next page, so the expectedStartRow is 0.
+        expectedStartRow = (row Mod pageRow) - 1
+    
+        'Loop of rows: vertical scroll bar
+        Do
+            currentVScroll = grid.FlexObject.verticalScrollPosition
+        
+            'We didn't scroll, the target row is on the current page
+            If numberOfScrolledRow = 0 Then
+                startRow = expectedStartRow
+            'We scrolled, how many rows we have scrolled?
+            Else          
+                'We have scroled some whole pages, the target row will be
+                'the first row on the page
+                If (numberOfScrolledRow Mod pageRow) = 0 Then
+                    startRow = 0
+                Else
+                    'If, after the scroll, the next page still has some rows,
+                    'then the target row will be the first row on current page
+                    If currentVScroll < maxVScrollPosition Then
+                        startRow = 0
+                    Else
+                        'There are some rows of last page remained in the current page 
+                        'the nuber of remainded row is (pageRow - (numberOfScrolledRow Mod pageRow))
+                        'so the row-number of target row should be addition of the above number and expectedStartRow
+                        startRow = expectedStartRow + (pageRow - (numberOfScrolledRow Mod pageRow))
+                    End If
+                End If 
+       
+            End If
+
+            'If the rows needed to be read are all on this page, no need to scroll
+            If (startRow+restRows) <= pageRow Then 
+                endRow = startRow+restRows - 1
+                restRows = 0
+            'If there are still some rows to be read on next page, need to scroll 
+            Else
+                endRow = pageRow - 1
+                restRows = restRows - (pageRow-startRow)
+            End If 
+        
+            'Read the cell value and put it to the array data
+            For rowi = startRow To endRow
+                'get the total column number of this row
+                totalColNumber = contentHolder.FlexObject.listItems.item(rowi).length
+        
+                If (renderStartColumn+restColumns) <= totalColNumber Then
+                    renderEndColumn = renderStartColumn+restColumns - 1
+                    'If one of row has enough columns to read, we consider that
+                    'we should finish read the columns.
+                    finishReadColumn = True
+                Else
+                    renderEndColumn = totalColNumber - 1
+                End If
+
+                dataColi = dataStartColi
+            
+                For columni = renderStartColumn To renderEndColumn
+                    Set cell = contentHolder.FlexObject.listItems.item(rowi).item(columni)
+                    'data(dataRowi,dataColi) = cell.listData.label
+                    data(dataRowi,dataColi) = getCellText(cell)
+                    dataColi = dataColi + 1                  
+                Next
+                dataRowi = dataRowi +1
+                'Take the maximum readed column number
+                If renderEndColumn - renderStartColumn + 1  > readedColumns Then
+                    readedColumns = renderEndColumn - renderStartColumn + 1
+                End If 
+            Next
+        
+            'If there is no more pages of the table, just exit the do-while loop
+            'If there is no more rows that we need to read, just exit the do-while loop
+            If (currentVScroll = maxVScrollPosition) or (restRows <= 0) Then
+                If currentVScroll = maxVScrollPosition and (restRows > 0) Then
+                    SAFSDebug "There are no enough rows to read for this table.", DEBUG_WARN
+                End If
+                Exit Do
+            End If
+        
+            'If program comes here, which means that the rows on previous page is not engouth
+            'we need to read rows on next page, then scroll to next page, of course the 
+            'expected start row is the first row on next page, so assign expectedStartRow to 0
+            If (restRows > 0) and canVScroll Then
+                '(endRow-startRow+1) is the number of row we have readed, scroll them over
+                scrollRow = scrollRow + (endRow-startRow+1)
+                grid.FlexObject.scrollToIndex  scrollRow
+                       
+                'get the number of rows have been scrolled
+                numberOfScrolledRow = grid.FlexObject.verticalScrollPosition - currentVScroll           
+                expectedStartRow = 0         
+            End If 
+        'End loop of rows
+        Loop While (currentVScroll <> maxVScrollPosition)
+        
+        'Horizontal scroll for reading the rest columns
+        If (canHScroll and Not finishReadColumn) Then
+            'If there are still columns can be read, we will scroll
+            If (scrollBarH.FlexObject.scrollPosition < scrollBarH.FlexObject.maxScrollPosition) Then
+                'add readedColumns to the start column number of the buffer 'data'
+                dataStartColi = dataStartColi + readedColumns
+                'minus readedColumns from restColumns
+                restColumns = restColumns - readedColumns
+                
+                'Try to scroll to the next horizontal page
+                nextColumnIndex = firstRenderColumnModelIndex + renderStartColumn + readedColumns
+                
+                firstRenderColumnModelIndex = scrollToColumn(scrollBarH, sbHLeftButton, sbHRightButton, nextColumnIndex)
+                If firstRenderColumnModelIndex = nextColumnIndex Then
+                    renderStartColumn = 0
+                Else
+                    renderStartColumn = nextColumnIndex - firstRenderColumnModelIndex
+                End If                 
+            Else
+                SAFSDebug "DataGrid has no enough columns for reading. ", DEBUG_WARN
+                finishReadColumn = True
+            End If
+        End If
+    'End loop of columns
+    Loop While (canHScroll and Not finishReadColumn)     
+        
+    getDataGridCellRange = 0
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Scroll the 'horizontal scroll bar' to make the column (indicated by columnIndex)
+'#      become the first visible column on the render if possible.
+'#      If 'left button' is clicked, the wanted column will be the first column on table render
+'#      If 'right button' is clicked, sometimes the 'wanted column' may not be the first column
+'#      as there are not enough columns at its right side.
+'# PARAMETERS:
+'#      hScrolBar     The Flex HScrollBar object
+'#      leftButton    The left button of HScrollBar, columns move to left by 1 unit when clicking it
+'#      rightButton   The right button of HScrollBar, columns move to right by 1 unit when clicking it 
+'#      columnIndex   The column index (of model) to be scrolled to, 0-based
+'# RETURNS:
+'#      column model index of the first column on render
+'# ERRORS:
+'#       none
+'# History:
+'#      NOV 29, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function scrollToColumn(hScrolBar, leftButton, rightButton, columnIndex)    
+    Dim numberOfClick, currentPosition, scrolledColumns
+
+    'Verify that column index has a valid number
+    If columnIndex < 0 Then
+        SAFSDebug "columnIndex should NOT be smaller than 0", DEBUG_WARN
+        columnIndex = 0
+    End If
+    
+    'Attention!!! after clicking the button, HScrollBar.FlexObject will change, we should NOT assign
+    'HScrollBar.FlexObject to a local variable, we should always use the HScrollBar.FlexObject itself
+    
+    'HScrollBar.FlexObject.scrollPosition will change after clicking on the scroll bar button
+    'HScrollBar.FlexObject.minScrollPosition will not change after clicking on the scroll bar button
+    'HScrollBar.FlexObject.maxScrollPosition may change after clicking on the scroll bar button
+    currentPosition = hScrolBar.FlexObject.scrollPosition
+    If columnIndex < currentPosition Then
+        numberOfClick = currentPosition - columnIndex
+        Call clickButton(leftButton,numberOfClick)
+        scrolledColumns = currentPosition - hScrolBar.FlexObject.scrollPosition
+        SAFSDebug "We have scrolled " & CStr(scrolledColumns) & " columns to Left", DEBUG_DEBUG
+    ElseIf columnIndex > currentPosition Then
+        numberOfClick = columnIndex - currentPosition
+        Call clickButton(rightButton,numberOfClick)
+        scrolledColumns = hScrolBar.FlexObject.scrollPosition - currentPosition
+        SAFSDebug "We have scrolled " & CStr(scrolledColumns) & " columns to Right", DEBUG_DEBUG
+    End If
+
+    scrollToColumn = hScrolBar.FlexObject.scrollPosition
+
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Click a button for multiple times
+'# PARAMETERS:
+'#      button          The Flex Button object
+'#      numberOfClick   The number of times to click on button
+'# RETURNS:
+'#      none
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Sub clickButton(button, numberOfClick)
+    Dim i
+    For i = 1 To numberOfClick
+        button.ClickButton
+    Next
+End Sub
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the button on a horizontal scrollbar
+'# PARAMETERS:
+'#      scrollbar      The Flex ScrollBar object.
+'#      isLeftButton   If true, get the left button; Otherwise, the right button.
+'# RETURNS:
+'#      A Flex Button object
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getHScrolBarButton(scrollbar, isLeftButton)
+    Dim props, values
+    
+    props = Array( "ObjectType" , "ObjectIdentifier")   
+    values = Array( "Button", "1")
+    
+    If Not isLeftButton Then
+        values(1) = "2"
+    End If
+  
+    Set getHScrolBarButton = scrollbar.FindChild(props,values)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the button on a vertical scrollbar
+'# PARAMETERS:
+'#      scrollbar      The Flex ScrollBar object.
+'#      isUpButton     If true, get the up button; Otherwise, the down button.
+'# RETURNS:
+'#      A Flex Button object
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getVScrolBarButton(scrollbar, isUpButton)
+    Dim props, values
+    
+    props = Array( "ObjectType" , "ObjectIdentifier")   
+    values = Array( "Button", "1")
+    
+    If Not isUpButton Then
+        values(1) = "2"
+    End If
+  
+    Set getVScrolBarButton = scrollbar.FindChild(props,values)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get a horizontal scrollbar
+'# PARAMETERS:
+'#      datagrid       The Flex DataGrid object.
+'# RETURNS:
+'#      A Flex HScrollBar object
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getHScrolBar(datagrid)
+    Dim props, values
+    
+    props = Array( "ObjectType" )   
+    values = Array( "HScrollBar")
+  
+    Set getHScrolBar = datagrid.FindChild(props,values)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get a vertical scrollbar
+'# PARAMETERS:
+'#      datagrid       The Flex DataGrid object.
+'# RETURNS:
+'#      A Flex VScrollBar object
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'############################################################################
+Function getVScrolBar(datagrid)
+    Dim props, values
+    
+    props = Array( "ObjectType" )   
+    values = Array( "VScrollBar")
+  
+    Set getVScrolBar = datagrid.FindChild(props,values)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Test if a datagrid has a 'row header'
+'#      This function is not trustable, it need to be modified for different kinds
+'#      of DataGrid, depends on how the 'row header' is implemented.
+'# PARAMETERS:
+'#      datagrid                (In)  The Flex DataGrid object.
+'#      rowHeaderColumnNumber   (Out) How many columns does 'row header' contain
+'# RETURNS:
+'#      True if the datagrid has a row header
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 02, 2011    (Lei Wang) Original Release
+'#      AUG 07, 2013    (Lei Wang) Modify to get the "number of column" that "row header" contains
+'############################################################################
+Function hasRowHeader(datagrid, rowHeaderColumnNumber)
+    Dim rowHeaderContent, rowHeaderContentIndex
+    
+    'Normallly ListBaseContentHolder(1) is the row header
+    'If the implementation of 'row header' is different, we need to modify code here!!!
+    rowHeaderContentIndex = 1
+    Set rowHeaderContent = getListBaseContentHolder(datagrid,rowHeaderContentIndex)
+    If (rowHeaderContent Is Nothing) or (Not rowHeaderContent.Exists) Then
+        SAFSDebug "Can't get the row header: ListBaseContentHolder("&CStr(rowHeaderContentIndex)&")", DEBUG_INFO
+        hasRowHeader = False
+    Else
+        hasRowHeader = True
+        If rowHeaderContent.FlexObject.listItems.length>0 Then
+          rowHeaderColumnNumber = rowHeaderContent.FlexObject.listItems.item(0).length
+        Else
+          SAFSDebug "Need new way to get the number of columns that 'row header' contains!", DEBUG_INFO
+          rowHeaderColumnNumber = 1
+        End If
+    End If
+    
+End Function
+
+'############################################################################
+'#  Function getCellText(cell)
+'# DESCRIPTION:
+'#      Get the cell's text value
+'# PARAMETERS:
+'#      cell       The cell item, it can be different type.
+'#                 cell = contentHolder.FlexObject.listItems.item(row).item(column)
+'# RETURNS:
+'#      The cell's text value
+'# ERRORS:
+'#       none
+'# History:
+'#      DEC 06, 2011    (Lei Wang) Original Release
+'#      JUN 13, 2012    (Lei Wang) Update to get cell's text through Label property.
+'#      MAY 01, 2013    (DharmeshPatel) Update FTEDataGridItemRenderer class name
+'#      May 14, 2013    (Junwu) Use regex to match classname suffered with "DataGridItemRenderer"
+'#      AUG 23, 2013    (Lei Wang) If listData.label is supported, take it as cell's text.
+'#      MAY 09, 2014    (JunwuMa) Cover property cell.data.name for cell's text value.
+'#      AUG 27, 2014    (LeiWang) Try cell.data.name at the last, as it may contain the wrong value.
+'############################################################################
+Function getCellText(cell)
+    Dim classname, text
+    
+    On Error Resume Next
+    classname = cell.className
+    SAFSDebug "Cell's classname is " & classname, DEBUG_DEBUG
+    
+    'Use regex to match classname suffered with "DataGridItemRenderer"
+    ' supporting "DataGridItemRenderer","FTEDataGridItemRenderer" and "ContentDataGridItemRenderer""    
+    'If aqString.StrMatches(".*DataGridItemRenderer", classname) Then
+    If aqObject.IsSupported(cell, "listData") Then
+        If aqObject.IsSupported(cell.listData, "label") Then
+            SAFSDebug "getting cell's text by cell.listData.label", DEBUG_DEBUG
+            text = cell.listData.label
+        End If
+    End If
+    
+    If Err.Number <> 0 or IsEmpty(text) or IsNull(text) Then
+        Err.Clear
+        'There are too many other classes such like 'ColumnViewEditorPageInnerClass0' 'QueryBuilderWindowInnerClass4',
+        'which can be handled by the following code
+        'We can't numerate them all in the ElseIf clause, so just let the following code to handle
+        'If meet an error, it is ok, we will log a warning message.   
+        SAFSDebug "Try the general way to get its text!", DEBUG_DEBUG
+        text = cell.label
+        If text = "" Then
+            Dim length, i, child, renderchild
+            length = cell.childDescriptors.length - 1
+            For i = 0 To length
+                Set child = cell.childDescriptors.item(i)
+                Set renderchild = aqObject.GetPropertyValue(cell,child.id)
+                If IsObject(renderchild) And _
+                   (Not renderchild Is Nothing) And _
+                   aqObject.IsSupported(renderchild, "text") Then
+                    text = renderchild.text
+                    Exit For
+                End If                                         
+            Next
+        End If
+        'Some cellrenders are HBox, so we can't get the label from them. But the Label is contained in that
+        'HBox, and it is exposed as a property, something like "_TableInfoEditDlgInnerClass4_Label1"
+        'we can try each property and get the Label property to get the text
+        Dim props, propObj
+        If text = "" Then
+            Err.Clear
+            SAFSDebug "Didn't get cell text. Try to find the Label property to get its text", DEBUG_DEBUG
+            Set props = aqObject.GetProperties(cell)
+            Do While props.HasNext 
+                Set propObj = props.Next.Value
+                If IsObject(propObj) And _
+                   (Not propObj Is Nothing) Then
+                   SAFSDebug "Trying property of type '"&propObj.className&"'", DEBUG_DEBUG
+                    If StringContains(propObj.className, "Label") Then 
+                        text = propObj.text
+                        Exit Do
+                    End If
+                End If              
+            Loop
+        End If
+    End If
+    
+    'try cell.data.name at the last    
+    If text = "" or IsEmpty(text) or IsNull(text) Then
+        SAFSDebug "getting cell's text by cell.data.name", DEBUG_DEBUG
+        Err.Clear
+        text = cell.data.name        
+    End if
+    
+    If Err.Number <> 0 Then
+        SAFSDebug "During get cell's text for cell '" &classname&"'. Met Error=" & CStr(Err.Number) , DEBUG_WARN
+        Err.Clear
+    End if
+    
+    SAFSDebug "Cell's text is '" +text+ "'", DEBUG_INFO
+    getCellText = text
+End Function
+
+'#      get the total number of rows in a table
+Function GetRowCount(grid)
+    On Error Resume Next
+    Err.Clear
+    GetRowCount = grid.FlexObject.dataProvider.length 
+    
+    if Err.Number <> 0 or isEmpty(GetRowCount) or isNull(GetRowCount) then
+        SAFSDebug " Cannot get RowCount by FlexObject.dataProvider.length, need to find another way out", DEBUG_INFO
+        GetRowCount = -1
+        Exit Function    
+    end if
+End Function
+
+'#      get the total number of columns in a table
+Function GetColumnCount(grid)
+    On Error Resume Next
+    Err.Clear
+    GetColumnCount = grid.FlexObject.columnCount
+    
+    if Err.Number <> 0 or isEmpty(GetColumnCount) or isNull(GetColumnCount) then 
+        SAFSDebug " Cannot get ColumnCount by FlexObject.columnCount, need to find another way out", DEBUG_INFO
+        GetColumnCount = -1
+        Exit Function  
+    end if  
+End Function

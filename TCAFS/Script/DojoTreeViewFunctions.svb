@@ -1,0 +1,223 @@
+﻿Option Explicit
+'##############################################################################
+'#
+'#    DOJOTREEVIEWFUNCTIONS.SVB  LIBRARY
+'#                                                                        
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on SQA Type=TREEVIEW objects in 
+'#      Data-Driven Automation.
+'#      This module is designed for handling Dojo tree in HTML5.  
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#      EXPAND, EXPANDTEXTNODE, EXPANDPARTIAL,EXPANDPARTIALTEXTNODE
+'#      SELECTTEXTNODE, SELECT, CLICK, CLICKTEXTNODE, CLICKPARTIAL 
+'#      DOUBLECLICKTEXTNODE, DOUBLECLICKPARTIAL
+'#      RIGHTCLICKTEXTNODE, RIGHTCLICKPARTIAL
+'#
+'# History:
+'#
+'#      DEC 25, 2013    (JunwuMa) Original Release
+'##############################################################################
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT TreeViewFunctions_X
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT StepDriver_X
+'USEUNIT DDGUIUtilities_X
+'USEUNIT StringUtilities
+
+'USEUNIT DDVariableStore
+'USEUNIT DDGUIUtilities
+'USEUNIT GenericMasterFunctions
+'USEUNIT GenericObjectFunctions
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+
+'USEUNIT DDUtilities 
+'USEUNIT FileUtilities 
+
+Sub ScrollNodeIntoView(aNode)
+    If Not aNode.VisibleOnScreen Then
+        aNode.scrollIntoView()
+    End if       
+End Sub
+
+Sub ExpandNode(aNode)
+    ScrollNodeIntoView(aNode)
+    aNode.SetActive()
+    aNode.Keys("[Right]") 'for dojo node expanding
+End Sub
+
+Function isNodeExpanded(aNode)
+    isNodeExpanded = aNode.ariaExpanded
+End Function 
+
+
+'*******************************************************************************
+' GetNodeByPath 
+' dojotree: tc object of a Dojo tree
+' nodepath: target to find out. "parent->child1->child2"
+' exactMatch: true exact match; false partial match
+' return: the tc object of the found node displayed in the view; if not found return an object with nothing referred to.
+'         returnNode.Exists = false
+'*******************************************************************************
+'define default depth for digging TreeNode; it should be larger if there are more node levels
+'called by GetNodeByPath()
+Const DEPTH_SEARCHING = 30
+Function GetNodeByPath(dojotree, nodepath, exactMatch)
+    Dim propArray
+    Dim valueArray
+    Dim itemNameArray
+    Dim currentNodeName
+    Dim i, itemCount  
+    Dim objTarget
+    
+    itemNameArray = Split(nodepath, NODE_DELIMIT)
+
+    Set objTarget = Nothing
+    itemCount = UBound(itemNameArray)
+    
+    For i = 0 To itemCount
+        currentNodeName = itemNameArray(i)
+        If Not exactMatch then
+            currentNodeName = "*" & currentNodeName & "*"
+        End If 
+        'propArray = Array("VisibleOnScreen","ObjectType","contentText")
+        'valueArray = Array(True, "TextNode", currentNodeName) 
+        propArray = Array("ObjectType","contentText")
+        valueArray = Array("TextNode", currentNodeName)        
+
+        Set objTarget = dojotree.FindChild(propArray, valueArray, DEPTH_SEARCHING)
+
+        If objTarget.Exists Then     
+            ScrollNodeIntoView(objTarget) 
+            If i <> itemCount Then
+                If not isNodeExpanded(objTarget) Then 
+                    ExpandNode(objTarget)
+                End If
+                Delay 1000 ' wait a second
+            else 
+                Exit For 'target node found
+            End If                
+        End If
+    Next  
+    Set GetNodeByPath = objTarget
+End Function
+
+'*******************************************************************************
+' action: EXPAND_ACTION or CLICK_ACTION or DOUBLE_CLICK_ACTION or RIGHT_CLICK_ACTION
+' exactMatch: bool, true: exact match. false: partial match 
+'*******************************************************************************
+Sub PerformAction (action, exactMatch)
+
+    Dim nodePath 
+    Dim objNode
+    Dim strActionInfo
+
+    with otrd
+   
+        .statuscode = SDGeneralScriptFailure
+        
+        'nodes delimited with "->";  e.g. "root->first->second"
+        nodePath = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+
+        if nodePath = "" then
+            LogMessage "Missing required node path for TreeView:"& .testcommand & _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, .inputrecord
+            exit Sub
+        end if
+
+        If IsMissing(exactMatch) then exactMatch = true
+
+        SAFSDebug "...start to find tree node: " & nodePath, DEBUG_INFO
+
+        Set objNode = GetNodeByPath(.compGUIID, nodePath, exactMatch)  
+        If Not objNode.Exists Then
+            SAFSDebug "...not found: " & nodePath, DEBUG_INFO
+            .statuscode = SDGeneralScriptFailure
+            LogMessage .compname & " Node:" & nodePath  & " is NOT found." & _
+                               "See table " & .filename & " at line " & _
+                               .linenumber, FAILED_MESSAGE,""
+            Exit Sub
+        End If
+        
+        Select Case action
+            Case EXPAND_ACTION
+                strActionInfo = "Expand"
+                ExpandNode(objNode)
+            Case CLICK_ACTION
+                strActionInfo = "Click"
+                objNode.Click                
+            Case DOUBLE_CLICK_ACTION
+                strActionInfo = "DoubleClick"
+                objNode.DblClick    
+            Case RIGHT_CLICK_ACTION
+                strActionInfo = "RightClick"
+                objNode.ClickR
+            Case Else                             
+                strActionInfo = "None"                
+        End Select
+         .statuscode = SDNoScriptFailure
+        LogMessage strActionInfo & " action is finished on " & .compname & " Node:" & nodePath,_
+                               PASSED_MESSAGE, ""
+
+  end with        
+End Sub
+
+
+Sub DojoTreeViewMain()
+
+    with otrd
+
+        Select Case UCase(.testcommand)
+            
+            Case "EXPAND", "EXPANDTEXTNODE"
+            
+                PerformAction EXPAND_ACTION, true
+                
+            Case "SELECTTEXTNODE", "SELECT", "CLICK", "CLICKTEXTNODE"
+            
+                 PerformAction CLICK_ACTION, true
+
+            Case "DOUBLECLICKTEXTNODE"
+            
+                 PerformAction DOUBLE_CLICK_ACTION, true
+                 
+            Case "RIGHTCLICKTEXTNODE"
+            
+                 PerformAction RIGHT_CLICK_ACTION, true
+                 
+            Case "EXPANDPARTIAL","EXPANDPARTIALTEXTNODE"
+                 
+                 PerformAction EXPAND_ACTION, false
+            
+            Case "CLICKPARTIAL"
+            
+                  PerformAction CLICK_ACTION, false
+                              
+            Case "DOUBLECLICKPARTIAL"
+            
+                 PerformAction DOUBLE_CLICK_ACTION, false            
+            
+            Case "RIGHTCLICKPARTIAL"
+            
+                 PerformAction RIGHT_CLICK_ACTION, false  
+                 
+            Case "CAPTURETREEDATATOFILE"
+
+                 'todo  
+                
+            Case "SETTREECONTAINSNODE"   
+                                            
+                 'todo 
+                 
+            Case Else
+                'GenericUnimplementedCommand
+                HandleGenericCommand
+        End Select
+
+    End With
+    
+End Sub 

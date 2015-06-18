@@ -1,0 +1,2391 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    TREEVIEWFUNCTIONS.SVB  SCRIPT
+'#
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on TREEVIEW objects in 
+'#      Data-Driven Automation with TestComplete 8.5 or later.  
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#      VerifySelectedNode      'verify a Node is selected
+'#      VerifyNodeUnselected    'verify a Node IS NOT SELECTED
+'#      SelectStateIcon           'select a state icon according to its text value
+'#      VerifyStateIcon           'verify a particular state icon is selected
+'#      VerifyStateIconUnselected 'verify a particular state icon is NOT SELECTED
+'#
+'#      ExpandTextNode          'Expand a Node at Text Label        (deprecated for Expand)
+'#      CollapseTextNode        'Collapse a Node at Text Label      (deprecated for Collapse)
+'#      SelectTextNode          'Select a Node at Text Label        (deprecated for Select)
+'#      RightClickTextNode      'Right click a Node at Text Label   (deprecated for RightClick)
+'#
+'#      Expand                  'Expand a Node (full path specified) at Text Label
+'#      ExpandPartial           'Expand a Node (full path specified) at Text Label based on a partial text match
+'#      Collapse                'Collapse a Node (full path specified) at Text Label
+'#      CollapsePartial         'Collapse a Node (full path specified) at Text Label based on a partial text match
+'#      Select                  'Select a Node (full path specified) at Text Label 
+'#
+'#      SelectPartial           'Select a Node (full path specified) at Text Label based on a partial text match
+'#      ClickPartial            'Click a Node (full path specified) at Text Label based on a partial text match
+'#      DoubleClickPartial      'DoubleClick a Node (full path specified) at Text Label based on a partial text match
+'#      RightClickPartial       'RightClick a Node (full path specified) at Text Label based on a partial text match
+'#
+'#      ClickTextNode           'Click a Node (full path specified) at Text Label
+'#      RightClickTextNode      'RightClick a Node (full path specified) at Text Label
+'#      DoubleClickTextNode     'DoubleClick a Node (full path specified) at Text Label
+'#
+'#      ClickUnverifiedTextNode       'Clicks a Node (full path specified) at Text Label -- does not verify the Nodes.count property 
+'#      DoubleClickUnverifiedTextNode 'DoubleClicks a Node (full path specified) at Text Label -- does not verify the Nodes.count property 
+'#      RightClickUnverifiedTextNode  'RightClicks a Node (full path specified) at Text Label -- does not verify the Nodes.count property 
+'#
+'#      SelectUnverifiedTextNode        'Clicks a Node (full path specified) at Text Label -- does not verify the Nodes.count property 
+'#      ActivateUnverifiedTextNode      'DoubleClicks a Node (full path specified) at Text Label -- does not verify the Nodes.count property 
+'#
+'#      CaptureTreeDataToFile           'Captures Tree node information (full branch path specified) to a file 
+'#      PartialMatchTreeDataToFile      'Captures Tree node information (partial branch path specified) to a file 
+'#
+'#      VerifyTreeContainsNode          'Verify that a Node (full path specified) is present in a Tree
+'#      VerifyTreeContainsPartialMatch  'Verify that a Node (partial path specified) is present in a Tree
+'#
+'#      SetTreeContainsNode             'Set a variable to reflect that a Node (full path specified) is present in a Tree
+'#      SetTreeContainsPartialMatch     'Set a variable to reflect that a Node (partial path specified) is present in a Tree
+'#
+'#      SelectTextNodeSpecial           'Click a text node with special keys like Shift, Ctrl
+'#      SelectPartialTextNodeSpecial    'Click a partila text node with special keys like Shift, Ctrl
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#  
+'#      SEP 30, 2011 (JunwuMa) Adding keywords for TC, the original version cannot work for TC. (.Net/WPF/Java/Win?)
+'#      DEC 23, 2011 (JunwuMa) Add keyword CaptureObjectDataToFile for .Net/WPF 
+'#      MAY 16, 2012 (Lei Wang)  Modify PerformAction: Continue to execute even if we can't get fullpath from tree's content. See defect S0860174.
+'#      JUL 18, 2012 (Lei Wang)  Update to support the new keyword SelectTextNodeSpecial, SelectPartialTextNodeSpecial
+'#      JUL 24, 2012 (Lei Wang)  Update to support getting tree item value from TreeViewItem Object. 
+'#                             Click on 'full index path' if the 'full text path' can't work. See defect S0880318
+'#      DEC 10, 2012 (Lei Wang)  Modify method PerformAction(): Call API ClickItem instead of SelectItem for WPF App.
+'#                             Modify method GetTreeItems(): Adjust to get the correct TextBlock of TreeViewItem. See defect S0924231.
+'#                                                  
+'##############################################################################
+
+
+'# SCRIPT CONSTANTS
+
+'# PUBLIC DEPENDENCIES
+
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT TreeViewFunctions_X
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT StepDriver_X
+'USEUNIT DDGUIUtilities_X
+
+'USEUNIT DDVariableStore
+'USEUNIT DDGUIUtilities
+'USEUNIT GenericMasterFunctions
+'USEUNIT GenericObjectFunctions
+
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT StringUtilities  
+
+'USEUNIT DDUtilities
+'USEUNIT DDUtilities_X
+'USEUNIT FileUtilities 
+
+'USEUNIT FlexTreeViewFunctions
+'USEUNIT DojoTreeViewFunctions
+
+'# FORWARD DECLARATIONS
+
+Dim value()
+Dim valueRows  'typically number of rows in data (not LBOUND)
+Dim valueCols  'typically UBOUND of data columns (value, 2)
+Dim sqaversion
+
+'returns valueRows and vals array in typical treeview format
+' Extend capturing object data to (VB) trees that Robot no 
+' longer has an ObjectDataVP for.  Right now this is limited 
+' to trees with Node.Count and Nodes(N).FullPath properties.
+Function extractGUIObjectData(guiID, vals())
+    Dim vrows
+    Dim vsep
+    Dim vcount
+    Dim vprop
+    Dim status
+    Dim icount
+    Dim vcols
+    Dim vvalcols
+    Dim vval
+    Dim vpad
+    
+    vrows = DDGGetGUIObjectData(guiID, vals)
+    
+    'extract individually if object data fails
+    if vrows < 1 then
+        'get the full path text string to the item        
+        vprop = "Nodes.Count"
+        status  = DDGGetGUIPropertyVariant(guiID, vprop, vcount)
+        if status = 0 then '0
+            vrows = vcount
+            status  = DDGGetGUIPropertyString(guiID, "PathSeparator", vsep)
+            if (status = 0) and (vcount > 0) then '0
+               vcols = 1
+               On Error Resume Next
+               ReDim vals(vcount, 1)
+               for icount = 1 to vcount 
+                   vval = ""
+                   vprop = "Nodes("& trim(Str(icount)) &").FullPath"
+                   status = DDGGetGUIPropertyString(guiID, vprop, vval)
+                   if status = 0 then
+                       vvalcols = GetFieldCount(vval, 1, vsep)
+                       if vvalcols > vcols then
+                          ReDim Preserve vals(vcount, vvalcols)
+                          vcols = vvalcols
+                       end if
+                       vprop = GetField(vval, vvalcols, vsep)
+                       vals(icount, vvalcols) = vprop
+                   end if
+               next
+            end if
+        end if
+    end if
+
+    extractGUIObjectData = vrows
+
+End Function
+
+'return the expanded state (True or False) of the node index
+'The base (0 or 1) of the index is not determined or checked by this routine.
+'We use the index unmodified.
+' "" on error. Logs error message.
+Function GetNodeIndexExpandedState (index)
+
+    Dim indexstring
+    Dim astring
+    Dim newvalue
+    Dim status
+    
+    'convert provided index to a string
+    indexstring = FindAndReplace(Str(index), " ", "")
+    
+    with otrd
+    
+        'get the full path text string to the item        
+        astring = "Nodes("+ indexstring +").Expanded"
+        status  = DDGGetGUIPropertyString(.compGUIID, astring, newvalue)
+        if status <> 0 then 
+            LogMessage .compname +" "+ .testcommand +": could not get Expanded state.  " + _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .compname +" GetNodeIndexExpandedState TestComplete Error" +Str(status)
+            exit function
+        end if
+        
+    End With
+    
+    GetNodeIndexExpandedState = newvalue
+    
+End Function
+
+
+
+'return the FullPath text string of the node at index.
+'index base (0 or 1) is not determined or checked by this routine.
+'We use the index unmodified.
+'The fullpath is retrieved, the separator is converted to the one
+'used by SQA for recognition.
+Function GetNodeIndexFullPathText (index)
+
+    Dim indexstring
+    Dim astring
+    Dim newvalue
+    Dim status
+    
+    'convert provided index to a string
+    indexstring = CStr(index)
+    indexstring = FindAndReplace(indexstring, " ", "")
+
+    with otrd
+    
+        'get the full path text string to the item        
+        astring = "Nodes("+ indexstring +").FullPath"
+        status  = DDGGetGUIPropertyString(.compGUIID, astring, newvalue)
+        if status <> 0 then 
+            LogMessage .compname +" "+ .testcommand +": could not get FullPath Text.  " + _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .compname +" GetNodeIndexFullPathText TestComplete Error" +Str(status)
+            exit function
+        end if
+        
+        'change the parent child separator to the one SQA wants
+        status  = DDGGetGUIPropertyString(.compGUIID, "PathSeparator", astring)
+        if status <> 0 then 
+            LogMessage .compname +" "+ .testcommand +": could not get PathSeparator.  " + _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .compname +" GetNodeIndexFullPathText TestComplete Error" +Str(status)
+            exit function
+        end if
+
+    End With
+        
+    'convert separator to SQA equivalent
+    newvalue = FindAndReplace (newvalue, astring, "->")
+
+    GetNodeIndexFullPathText = newvalue
+
+End Function
+
+
+
+'return the index of the node whose text matches nodetext
+' >=0 index of node with matching text (this may be 0 or 1 based)
+' -2 if no match found
+' -1 if tree cannot be found
+Function GetTextNodeIndex (nodetext, matchIndex) 
+
+    Dim status
+    Dim status2
+    Dim nodecount
+    Dim newvalue
+    Dim newvalue2
+    
+    Dim index
+    Dim astring
+    Dim astring2
+    Dim matches
+    Dim matchText
+    
+    with otrd
+    
+        GetTextNodeIndex = -1   'set no tree error
+        status = DDGGetGUIPropertyVariant(.compGUIID, "Nodes.Count", nodecount)
+        if status <> 0 then 
+            LogMessage "Could not examine Nodes.Count for TreeView:"+ .testcommand +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +" or "+ .compname +" may no longer be accessible."
+            exit function
+        end if
+        
+        GetTextNodeIndex = -2    'set no match found
+        
+        if nodecount < 1 then 
+            LogMessage "No Nodes found for "+ .compname +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +":"+ .compname +" may have 0 Nodes."
+            exit function
+        end if
+        
+        if isMissing(matchIndex) then matchIndex = 1
+        if matchIndex > 1 then 
+            matchText = " matchIndex #"& trim(str(matchIndex)) &" "
+        else
+            matchText = " "
+        end if
+        
+        Dim nbase
+        Dim nmax
+        nbase = 1
+        nmax = nodecount
+        if .environment = DDU_NET_ENVIRONMENT then 
+            nbase = 0
+            nmax = nodecount -1
+        end if
+
+        matches = 0                        
+        for index = nbase to nmax
+        
+            astring = "Nodes("& Trim(Str(index)) &").Text"
+            astring = FindAndReplace (astring, " ", "") 'remove any spaces
+            status  = DDGGetGUIPropertyVariant(.compGUIID, astring, newvalue)
+
+            astring2 = "Nodes("+Str(index)+").FullPath"
+            astring2 = FindAndReplace (astring2, " ", "") 'remove any spaces
+            status2  = DDGGetGUIPropertyVariant(.compGUIID, astring2, newvalue2)
+            'this "\" is hardcoded, may need to change to get .compguiid PathSeparator 
+            newvalue2 = FindAndReplace (newvalue2, "\", "->") 'replace \ sep with -> sep
+
+            if (status <> 0) AND (status2 <> 0) then 
+                GetTextNodeIndex = -1   'set no tree error (shouldn't happen here)
+                LogMessage "Could not retrieve indexed NodeText for "+ .compname +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +" or "+ .compname +" may no longer be accessible. " + _
+                       "TestComplete Error" +Str(status)
+                exit function
+            end if
+            
+            'case sensitive compare
+            if StrComp(newvalue, nodetext, 0) = 0 then 
+                matches = matches + 1
+                if matches = matchIndex then exit for
+            elseif StrComp(newvalue2, nodetext, 0) = 0 then 
+                matches = matches + 1
+                if matches = matchIndex then exit for
+            end if
+        next
+        
+        if index <= nmax then
+            GetTextNodeIndex = index
+        else
+            GetTextNodeIndex = -2
+            LogMessage "Could not find TextNode:"& nodetext & matchText & _
+                       "in "& .compname &" "& _
+                       "from table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +":"& .compname &" requested node was not found."
+        end if        
+    End With
+End Function
+
+'return the index of the node whose full path matches nodepath
+' nodepath  full path of the node to match
+' delimiter path separator of nodepath
+' returns   index of the matching node (0-based or 1-based) or
+'           -2 if no match found or
+'           -1 if no tree found
+Function GetFullPathNodeIndex (nodepath, delimiter, matchIndex)
+
+    Dim status
+    Dim nodecount
+    Dim newvalue
+    Dim match
+    Dim pathSeparator
+    Dim matches
+    Dim matchText
+    
+    Dim index
+    Dim astring
+    
+    with otrd
+    
+        GetFullPathNodeIndex = -1   'set no tree error
+        status = DDGGetGUIPropertyVariant(.compGUIID, "Nodes.Count", nodecount)
+        if status <> 0 then 
+            LogMessage "Could not examine Nodes.Count for TreeView:"+ .testcommand +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +" or "+ .compname +" may no longer be accessible."
+            exit function
+        end if
+        
+        'get the PathSeparator property of the TreeView
+        status = DDGGetGUIPropertyString(.compGUIID, "PathSeparator", pathSeparator)
+        if status <> 0 then 
+            LogMessage "Could not examine PathSeparator for TreeView:"+ .testcommand +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +" or "+ .compname +" may no longer be accessible."
+            exit function
+        end if
+        match = FindAndReplace (nodepath, delimiter, pathSeparator)
+
+        GetFullPathNodeIndex = -2   'set no match error
+
+        if nodecount < 1 then 
+            LogMessage "No Nodes found for "+ .compname +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +":"+ .compname +" may have 0 Nodes."
+            exit function
+        end if
+        
+        if IsMissing(matchIndex) then matchIndex = 1
+        if matchIndex > 0 then 
+            matchText = " matchIndex #"& trim(str(matchIndex)) &" "
+        else
+            matchText = " "
+        end if
+        
+        Dim nbase
+        Dim nmax 
+        nbase = 1
+        nmax = nodecount
+        if .environment = DDU_NET_ENVIRONMENT then
+           nbase = 0
+           nmax = nodecount -1
+        end if
+        
+        matches = 0        
+        for index = nbase to nmax
+        
+            astring = "Nodes("+Str(index)+").FullPath"
+            astring = FindAndReplace (astring, " ", "") 'remove any spaces
+            status  = DDGGetGUIPropertyVariant(.compGUIID, astring, newvalue)
+
+            if status <> 0 then 
+                GetFullPathNodeIndex = -1   'set no tree error (shouldn't happen here)
+                LogMessage "Could not get indexed NodeFullPath for "+ .compname +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +" or "+ .compname +" may no longer be accessible. " + _
+                       "TestComplete Error" +Str(status)
+                exit function
+            end if
+            
+            'case sensitive compare
+            if StrComp(newvalue, match, 0) = 0 then 
+                matches = matches + 1
+                if matches = matchIndex then exit for
+            end if
+        next
+        
+        if index <= nmax then
+            GetFullPathNodeIndex = index
+        else
+            GetFullPathNodeIndex = -2
+            LogMessage "Could not find FullNode:"& nodepath & matchText & _
+                       "in "& .compname &" "& _
+                       "from table "& .filename &" at line "& _
+                        .linenumber, FAILED_MESSAGE, _
+                       .windowname &":"& .compname &" requested node was not found."
+        end if
+        
+    End With
+
+End Function
+
+
+
+'Verifies the currently selected item text matches that provided
+' 0 if does not match
+' 1 if it matches
+' (JunwuMa) update to support .Net/WPF
+Function VerifyTextNodeSelection (nodetext)
+
+    Dim status
+    Dim newvalue
+    Dim status2
+    Dim newvalue2
+    
+    with otrd
+    
+        VerifyTextNodeSelection = 0
+    
+        'status = DDGGetGUIPropertyVariant(.compGUIID, "SelectedItem.Text", newvalue)
+        'status2 = DDGGetGUIPropertyVariant(.compGUIID, "SelectedItem.FullPath", newvalue2)
+        status = DDGGetGUIPropertyVariant(.compGUIID, "wSelection", newvalue)
+        
+        'this "\" is hardcoded, may need to change to get .compguiid PathSeparator 
+        'newvalue2 = FindAndReplace(newvalue2, "\", "->")
+        
+        if (status <> 0) then
+            LogMessage .windowname +":"+ .compname +" selected item text " + _
+                       "could not be retrieved.  " + _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +":"+ .compname +" selection was not verified. " + _
+                       "TestComplete Error"+ CStr(status)
+            exit function
+        end if
+        
+        'a->b  converted to "|a|b" that the value in wSelection
+        nodetext = ConvertFullNodePathToWorkItem(nodetext)
+        
+        if StrComp(newvalue, nodetext, 0) <> 0 then
+            if StrComp(newvalue2, nodetext, 0) <> 0 then
+                exit function
+            else 
+                VerifyTextNodeSelection = 1
+            end if
+        else
+            VerifyTextNodeSelection = 1
+        end if
+        
+    End With
+
+End Function
+
+'Verifies the currently selected state icon state of node at index
+'index base may be 0 or 1 and is not checked.
+' 0 if does not match
+' 1 if it matches
+Function VerifyStateIconSelection (index)
+ 
+    Dim indexstring
+    Dim status
+    Dim newvalue
+    
+    Dim astring
+
+    'convert provided index to a string
+    indexstring = FindAndReplace(Str(index), " ", "")
+    
+    with otrd
+    
+        VerifyStateIconSelection = 0
+        astring = "Nodes("+ indexstring +").Checked"
+        status = DDGGetGUIPropertyVariant(.compGUIID, astring, newvalue)
+        if status <> 0 then
+            LogMessage .windowname +":"+ .compname +" selected icon state " + _
+                       "could not be retrieved.  " + _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +":"+ .compname +" selection was not verified. " + _
+                       "TestComplete Error"+ CStr(status)
+            exit function
+        end if
+        
+        if newvalue = -1 then VerifyStateIconSelection = 1
+           
+    End With
+
+End Function
+
+
+'Verifies the currently selected state of the specified indexed node
+' index of the node may be 0-based or 1-based and this is not checked
+' 0 if Nodes(index).Selected is False
+' 1 if Nodes(index).Selected is True
+Function VerifyNodeIndexSelection(index)
+ 
+    Dim indexstring
+    Dim status
+    Dim newvalue
+    
+    Dim astring
+
+    'convert provided index to a string
+    indexstring = FindAndReplace(Str(index), " ", "")
+    
+    with otrd
+    
+        VerifyNodeIndexSelection = 0
+        astring = "Nodes("+ indexstring +").Selected"
+        status = DDGGetGUIPropertyVariant(.compGUIID, astring, newvalue)
+        if status <> 0 then
+            LogMessage .windowname +":"+ .compname +" selected state " + _
+                       "could not be retrieved.  " + _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +":"+ .compname +" selection was not verified. " + _
+                       "TestComplete Error"+ CStr(status)
+            exit function
+        end if
+        
+        if newvalue = -1 then VerifyNodeIndexSelection = 1   
+        
+    End With
+
+End Function
+
+' performs a mouse click on a node given its full path
+' action    CLICK_ACTION to click
+'           DOUBLE_CLICK_ACTION to double click
+'           RIGHT_CLICK_ACTION to right click
+' nodepath  "->" delimited full path of the node
+' location  Optional. Location for the mouse click. One of the valid
+'           values for SQA TreeView user action command's "Location"
+'           parameter. Default is "Location=Text", which is the 
+'           default for the SQA TreeView user action command.
+'           .NET support in 2003 does not support this, apparently.
+' matchIndex Optional. Match the Nth duplicate node, instead of the first.
+'            matchIndex is 1-based even though .NET indices are 0-based
+' returns   0 if mouse click performed
+'           1 if failed
+Function ClickFullPathNode(action, nodepath, location, matchIndex)
+
+    Dim finalValue
+    Dim sLocation
+    Dim vaction
+    
+    with otrd
+
+        ClickFullPathNode = 1
+
+        Select Case UCASE(.environment)
+           Case DDU_NET_ENVIRONMENT 
+               'ignore location and matchindex at this time
+               '.NET support for these does not seem to exist
+               if IsMissing(matchIndex) then
+                   slocation = "Text="& nodepath
+               else
+                   if matchIndex > 1 then
+                       slocation = Trim(Str(matchIndex-1))
+                   else
+                       slocation = nodepath
+                   end if                
+               end if
+               finalValue = .compGUIID
+           Case "POWERBUILDER"
+               If IsMissing(location) Then
+                   sLocation=""
+               Else
+                   sLocation=location
+               End If
+        
+               if IsMissing(matchIndex) then
+                   finalValue = nodepath
+               else
+                   if matchIndex > 1 then
+                       'don't know if powerbuilder works same as others
+                       'finalValue = .compGUIID &";\;Type=TVItem;ItemText="& nodepath &";Index="& Trim$(Str$(matchIndex))
+                       finalValue = nodepath
+                   else
+                       finalValue = nodepath
+                   end if                
+               end if
+           Case Else
+               If IsMissing(location) Then
+                   sLocation="Location=Text"
+               Else
+                   sLocation=location
+               End If
+        
+               if IsMissing(matchIndex) then
+                   finalValue = nodepath
+               else
+                   if matchIndex > 1 then
+                       finalValue = Trim(Str(matchIndex))
+                   else
+                       finalValue = nodepath
+                   end if                
+               end if
+        End Select
+        
+        'perform action
+        .windowGUIID.Activate
+        
+        Select Case action
+            Case CLICK_ACTION
+                vaction = ClickItem
+            Case DOUBLE_CLICK_ACTION
+                vaction = DblClick
+            Case RIGHT_CLICK_ACTION
+                vaction = Right_Click            
+            Case Else
+                Exit Function
+        End Select
+
+        On Error Resume Next
+        .compGUIID.vaction sLocation
+        TreeView vaction, finalValue, sLocation
+        If Err<> 0 then
+            finalValue = FindAndReplace(finalValue, "&", "")
+            TreeView vaction, finalValue, sLocation
+        End if
+        On Error Goto 0
+        ClickFullPathNode = 0
+
+    End With
+
+End Function
+
+' expands or collapses a node given its full path
+' action    1 to expand, 0 to collapse
+' nodepath  "->" delimited full path of the node
+' matchIndex Optional. Nth duplicate node to match instead of just the first one.
+' returns   0 if node was expanded/collapsed successfully
+'           1 if failed
+'(Carl Nagle) DEC 03, 2003 Added matchIndex to select Nth match
+'                      matchIndex MUST be numeric integer > 0 if provided
+Function ToggleFullPathNode(action, nodepath, matchIndex)
+    Dim status
+
+    Dim finalValue
+    Dim nodeIndex
+    Dim nodeState
+    
+    with otrd
+
+        ToggleFullPathNode = 1
+        if action <> 0 then action = 1
+        
+        if IsMissing(matchIndex) then 
+            matchIndex = 1
+        end if
+        
+        finalValue = nodepath
+
+        'nodeindex may be 0-based (.NET)
+        nodeIndex = GetFullPathNodeIndex(finalValue, NODE_DELIMIT, matchIndex) ' handles error message
+
+        '.NET is actually 0-based        
+        if nodeIndex < 0 Then Exit Function
+                
+        'perform action
+        Window SetContext, .windowGUIID, "Activate=0"
+        'get current expanded state
+        nodeState = GetNodeIndexExpandedState(nodeIndex) ' handles error message
+        if nodeState = "" then exit Function
+
+        'double click the node text if expanded state is different than expected
+        if (StrComp(nodeState, "False", 1) = 0 And action = 1) Or (StrComp(nodeState, "True", 1) = 0 And action = 0) then 
+            'YWANG: have to do this click because I have one strange node that gives
+            'out an error if I double click it directly. Clicking it first seems to
+            'fix that.
+            ClickFullPathNode CLICK_ACTION, finalValue, matchIndex
+            ClickFullPathNode DOUBLE_CLICK_ACTION, finalValue, matchIndex
+            'get expanded state after double click
+            nodeState = GetNodeIndexExpandedState(nodeIndex) ' handles error message
+        end if
+
+        'verify expanded state
+        if action = 1 then
+            status = StrComp(nodeState, "True", 1)
+        elseif action = 0 then
+            status = StrComp(nodeState, "False", 1)
+        end if
+
+        if status = 0 then ToggleFullPathNode = 0
+
+    End With
+
+End Function
+
+'############################################################################
+'#
+'#   Sub ExpandTextNode (Optional mode)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to expand a node according to its text value.
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#      
+'# PARAMETERS:
+'#
+'#    mode  0 = ExpandTextNode command
+'#          1 = CollapseTextNode command
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+Sub ExpandTextNode(mode)
+
+    Dim status
+    Dim tablevalue
+    Dim newvalue    
+    Dim matchCount
+    Dim matchIndex
+    Dim index
+    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tablevalue = "" then
+            LogMessage "Missing required Node Text field for TreeView:"+ .testcommand +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+        
+        'see if we are selecting the Nth item, instead of the first        
+        matchCount = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        matchIndex = 1
+        if Len(matchCount) > 0 then
+          if IsNumeric(matchCount) then
+              matchIndex = matchCount
+          else
+              if UCASE(Left(matchCount, 6)) = "INDEX=" then 
+                  matchIndex = CINT(Mid(matchCount,7))
+              end if
+          end if
+        end if
+                
+        index = GetTextNodeIndex(tablevalue, matchIndex)    'handles error messages
+
+        '.NET is actually 0-based        
+        if index < 0 then exit sub        
+
+        'check if expanded or not
+        newvalue = GetNodeIndexExpandedState(index) 'handles error messages
+        if newvalue = "" then exit sub
+
+        Dim preState, postState, targetState
+        
+        if isMissing(mode) then mode = 0  'EXPAND 
+        if mode = 0 then
+            targetState = "ExpandItem"
+            preState    = "False"
+            postState   = "True"
+        else
+            targetState = "CollapseItem"
+            preState    = "True"
+            postState   = "False"
+        end if
+                
+        'Expand/Collapse if in proper preState for the command
+        if StrComp(newvalue, preState, 1) = 0 then 
+
+            newvalue = GetNodeIndexFullPathText(index) 'handles error messages
+            if newvalue = "" then exit sub
+
+            ClickFullPathNode DOUBLE_CLICK_ACTION, newvalue, matchIndex
+            
+            'check if expanded or not
+            newvalue = GetNodeIndexExpandedState(index) 'handles error messages
+
+        end if
+                
+        'verify expected postState
+        status = StrComp(newvalue, postState, 1)
+
+        if status = 0 then 
+            .statuscode = SDNoScriptFailure
+            LogMessage .compname &" Node:"& tablevalue &" is "& targetState &".", _
+                       PASSED_MESSAGE, ""
+        else
+            LogMessage .compname &" Node:"& tablevalue &" is NOT "& targetState &".  "+ _
+                       "See table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, _
+                       .windowname +":"+ .compname +" Node:"+ tablevalue + _
+                       ", should have Expanded="& postState &", but returns:"+ newvalue +"."
+        end if
+        
+    End With
+
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub CollapseTextNode () Integrated into ExpandTextNode
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to collapse a node according to its text value.
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#      
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+
+
+
+'############################################################################
+'#
+'#   Sub VerifySelectedNode (Optional mode)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify a particular text is selected.
+'#      
+'# PARAMETERS:
+'#
+'#    mode  0 = VerifySelectedNode command
+'#          1 = VerifyNodeUnselected command
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+Sub VerifySelectedNode(mode)
+
+    Dim status
+    Dim tablevalue
+    Dim newvalue   
+    Dim index
+    Dim errorString
+        
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tablevalue = "" then
+            LogMessage "Missing required Item Text field for TreeView:"& .testcommand &" "& _
+                       "from table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+
+        status = VerifyTextNodeSelection(tablevalue)    'handles Error Messages
+        
+        if IsMissing(mode) then mode = 0
+        
+        if mode = 0 then 
+            errorString = " is NOT SELECTED. "
+        else
+            errorString = " IS SELECTED. "
+        end if
+        
+        if ( ((mode=0)AND(status=1)) OR _
+             ((mode=1)AND(status=0))) then
+             
+            .statuscode = SDNoScriptFailure
+            LogMessage .windowname &":"& .compname &" "& .testcommand & _
+                       " of "& tablevalue &" successful.", _
+                       PASSED_MESSAGE, ""                                 
+        else
+            LogMessage tablevalue &" in "& .compname & errorString & _
+                  " Verification failed.  "& _
+                  "See table " + .filename &" at line "& _
+                  .linenumber, FAILED_MESSAGE, .inputrecord
+        end if
+        
+    End With
+
+End Sub
+
+'############################################################################
+'#
+'#   Sub VerifyStateIcon (Optional mode)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify a particular state icon is selected.
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#      
+'#
+'# PARAMETERS:
+'#
+'#    mode  0 = VerifySelectedNode command
+'#          1 = VerifyNodeUnselected command
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyStateIcon(mode)
+
+    Dim status
+    Dim tablevalue
+    Dim newvalue
+    Dim index
+    Dim matchCount
+    Dim matchIndex
+    Dim errorString
+            
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tablevalue = "" then
+            LogMessage "Missing required Item Text field for TreeView:"& .testcommand &" "& _
+                       "from table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+        
+        'see if we are selecting the Nth item, instead of the first        
+        matchCount = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        matchIndex = 1
+        if Len(matchCount) > 0 then
+          if IsNumeric(matchCount) then
+              matchIndex = matchCount
+          else
+              if UCASE(Left(matchCount, 6)) = "INDEX=" then 
+                  matchIndex = CINT(Mid(matchCount,7))
+              end if
+          end if
+        end if
+                
+        index = GetTextNodeIndex(tablevalue, matchIndex) 
+        status = VerifyStateIconSelection(index)    'handles Error Messages
+
+        if mode = 0 then 
+            errorString = " is NOT SELECTED. "
+        else
+            errorString = " IS SELECTED. "
+        end if
+        
+        if ( ((mode=0)AND(status=1)) OR _
+             ((mode=1)AND(status=0))) then
+            .statuscode = SDNoScriptFailure
+            LogMessage .windowname &":"& .compname &" "& .testcommand & _
+                       " of "& tablevalue &" successful.", _
+                       PASSED_MESSAGE, ""                                 
+        else
+            LogMessage tablevalue &" in "& .compname & errorString & _
+                  " Verification failed.  "& _
+                  "See table " + .filename &" at line "& _
+                  .linenumber, FAILED_MESSAGE, .inputrecord
+        end if
+        
+    End With
+
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub VerifyStateIconUnselected () Integrated into VerifyStateIconSelected
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify a particular state icon is NOT SELECTED.
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#      
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+
+
+'############################################################################
+'#
+'#   Sub VerifyNodeUnselected () Integrated into VerifySelectedNode
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify a particular text node is NOT SELECTED.
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#      
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+
+
+'############################################################################
+'#
+'#   Sub SelectTextNode (Optional location)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to select a node or state icon according to its text value.
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#      
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+Sub SelectTextNode(location)
+
+    Dim status
+    Dim tablevalue
+    Dim newvalue
+    Dim index
+    Dim slocation
+    Dim check
+    Dim matchCount
+    Dim matchIndex
+    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tablevalue = "" then
+            LogMessage "Missing required Node Text field for TreeView:"+ .testcommand +" " + _
+                       "from table " + .filename + " at line " + _
+                       CStr(.linenumber), FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+
+        'see if we are selecting the Nth item, instead of the first        
+        matchCount = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        matchIndex = 1
+        if Len(matchCount) > 0 then
+          if IsNumeric(matchCount) then
+              matchIndex = matchCount
+          else
+              if UCASE(Left(matchCount, 6)) = "INDEX=" then 
+                  matchIndex = CINT(Mid(matchCount,7))
+              end if
+          end if
+        end if
+                        
+        index = GetTextNodeIndex(tablevalue, matchIndex)    'handles error messages
+        
+        '.NET is 0-based
+        if index < 0 then exit sub        
+
+        newvalue = GetNodeIndexFullPathText(index) 'handles error messages
+        if newvalue = "" then exit sub
+        
+        On Error Resume Next
+        
+        If IsMissing(location) then
+           sLocation="Location=Text"
+           check=1
+        else
+           sLocation=location
+           check=0
+           'see if state icon is already selected
+           status=VerifyStateIconSelection(index)
+        end if
+            
+      'then change the existing lines to use the new sLocation variable
+       
+       'select if unselected
+       If status = 0 then  ClickFullPathNode CLICK_ACTION, _
+                                             newvalue, _
+                                             sLocation, _
+                                             matchIndex
+       'verify selection
+       If check=1 then
+           VerifySelectedNode
+       else
+          VerifyStateIcon 
+       end if
+        
+    End With
+
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub RightClickUnverifiedTextNode () Integrated into SelectUnverifiedText
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to right click a node according to its text value.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+
+
+
+'############################################################################
+'#
+'#   Sub SelectUnverifiedTextNode ()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to click a node according to its text value.  Supports:
+'#
+'#         ClickUnverified (Click)
+'#         DoubleClickUnverified (DblClick)
+'#         RightClickUnverified (Right_Click)
+'#
+'#         SelectUnverified (Click)
+'#         ActivateUnverified (DblClick)
+'#
+'#      The routine now supports specifying a matchIndex for matching 
+'#      duplicate nodes in the tree (the same full path).
+'#
+'#      Note the command needs the full hierarchical path to the node with parent 
+'#      child relationships separated by "->", as in "Parent->Branch->Leaf".
+'#
+'#      
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+Sub SelectUnverifiedTextNode(mode)
+
+    Dim tablevalue
+    Dim status
+    Dim matchCount
+    Dim matchIndex
+    Dim aAction
+                    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tablevalue = "" then
+            LogMessage "Missing required Node Text field for TreeView:"& .testcommand & _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+
+        'see if we are selecting the Nth item, instead of the first        
+        matchCount = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        matchIndex = 1
+        if Len(matchCount) > 0 then
+          if IsNumeric(matchCount) then
+              matchIndex = matchCount
+          else
+              if UCASE(Left(matchCount, 6)) = "INDEX=" then 
+                  matchIndex = CINT(Mid(matchCount,7))
+              end if
+          end if
+        end if
+
+        if IsMissing(mode) then mode = 0
+        select case mode        
+            case 0  'select
+                aAction = CLICK_ACTION
+            case 1  'right click
+                aAction = RIGHT_CLICK_ACTION
+            case 2  'Activate/Doubleclick
+                aAction = DOUBLE_CLICK_ACTION
+        end select
+                                
+        ClickFullPathNode aAction, _
+                          tablevalue, _
+                          matchIndex
+
+        'could not seem to catch any other Err <> 0 (such as item not found)          
+        'so we could not write a possible warning if the user specified an item
+        'that does not exist and throws a Script Command Failure
+        .statuscode = SDNoScriptFailure
+        if matchindex > 1 then
+            LogMessage .windowname &":"& .compname &" "& .testcommand & _
+                   " of '"& tablevalue &"' Index="& CStr(matchindex) &" attempted.", "", ""
+        else
+            LogMessage .windowname &":"& .compname &" "& .testcommand & _
+                   " of '"& tablevalue &"' attempted.", "", ""
+        end if
+    End With
+
+End Sub
+
+
+'############################################################################
+'#
+'#   PerformAction (EXPAND_ACTION, Optional mode, Optional location)
+'#
+'#      OCT 11, 2011    (JunwuMa) Change its convention removing location and 
+'#                      Update to support Tree in .Net/WPF/Java
+'#      JUL 24, 2012    (Lei Wang)  Update to click on 'full index path'. See defect S0880318
+'#      JUL 10, 2014    (Carl Nagle) Move "Unverified" commands into PerformUnverifiedAction
+'#
+'############################################################################
+'Change its convention removing location  --Junwu
+'mode: 0 default -- exact match
+Sub PerformAction (action, mode) 
+
+    Dim status
+
+    Dim tableValue
+    Dim tempValue
+    Dim nodeIndex
+    Dim nodeState
+    Dim sLocation
+    Dim check
+    Dim itemp
+    Dim matchCount, matchIndex
+    
+    Dim fullnodepath, fullIndexPath
+    Dim TreewItems
+ 
+    Dim specialKey
+    Dim mouseKey
+    Dim clickWithRightButton
+    
+    Dim errCount
+    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tableValue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tableValue = "" then
+            LogMessage "Missing required Node Text for TreeView:"& .testcommand & _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+        
+        'see if we are selecting the Nth item, instead of the first        
+        matchCount = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        matchIndex = 1
+        if Len(matchCount) > 0 then
+          if IsNumeric(matchCount) then
+              matchIndex = matchCount
+          else
+              if UCASE(Left(matchCount, 6)) = "INDEX=" then 
+                  matchIndex = CINT(Mid(matchCount,7))
+              end if
+          end if
+        end if
+        
+        SAFSDebug "Tree node's fullpath passed in: "& tableValue & " ", DEBUG_INFO   
+        
+        If IsMissing(mode) then mode = 0
+        if mode <> 0 then mode = 1
+
+        '---  Junwu
+        On Error Resume Next  
+        
+        Set TreewItems = .compGUIID.wItems
+        if Err.Number <> 0 then 
+            LogMessage "Could not examine wItems for TreeView:"& .TestCommand &" "& _
+                       "from table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, ""
+            exit Sub
+        end if    
+        
+        'get full node path by its input tableValue
+        status = GetNodeByText(.compGUIID, TreewItems, tableValue,mode=0, matchIndex, fullnodepath, fullIndexPath)
+        if status <> 0 then
+            SAFSDebug .compname & " Node:" & tableValue &" can NOT be found.  ", DEBUG_WARN
+            SAFSDebug "We will try to "&action&" path '" & tableValue &"' directly.", DEBUG_DEBUG
+            'Add the wildcast for path item if the match is not exact.
+            fullnodepath = GetWildCastFullPath(tableValue, mode)
+        end if
+        
+        SAFSDebug "Search the TreeView getting the full node path: "& fullnodepath, DEBUG_INFO
+        SAFSDebug "Search the TreeView getting the full node index path: "& fullIndexPath, DEBUG_INFO
+           
+        fullnodepath = ConvertFullNodePathToWorkItem(fullnodepath)
+        SAFSDebug "performing "& action & " on the converted full node path : "& fullnodepath, DEBUG_INFO   
+        
+        specialKey = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        mouseKey = GetTrimmedQuotedField(.inputrecord, 8, .separator)
+        SAFSDebug "specialKey='"& specialKey & "' mouseKey='"& mouseKey &"'", DEBUG_INFO 
+        
+        'Convert the special key to value needed by TC API
+        If StringEqual(specialKey, SPECIAL_KEY_CONTROL) Then
+            specialKey = skCtrl
+        ElseIf StringEqual(specialKey, SPECIAL_KEY_SHIFT) Then
+            specialKey = skShift
+        Else
+            specialKey = skNoShift
+        End If
+        
+        'Decide if click with right button
+        clickWithRightButton = False
+        If StringEqual(mouseKey, MOUSE_BUTTON_RIGHT) Then
+            clickWithRightButton = True
+        End If
+        
+        'perform action
+        .windowGUIID.Activate
+        
+        'Use errCount to record
+        errCount = Log.ErrCount
+
+        Select Case action
+        
+            Case EXPAND_ACTION
+                .compGUIID.ExpandItem(fullnodepath)
+                If errCount <> Log.ErrCount Then
+                    errCount = Log.ErrCount
+                    .compGUIID.ExpandItem(fullIndexPath)
+                End If
+                
+            Case COLLAPSE_ACTION
+                .compGUIID.CollapseItem(fullnodepath)
+                If errCount <> Log.ErrCount Then
+                    errCount = Log.ErrCount
+                    .compGUIID.CollapseItem(fullIndexPath)
+                End If
+                                
+            Case SELECT_ACTION
+                'For WPF application, the method SelectItem doesn't exist :-(
+                'We can use ClickItem instead
+                'SelectItem doesn't work stablely, use ClickItem firstly
+                If aqObject.IsSupported(.compGUIID, "ClickItem") Then
+                    .compGUIID.ClickItem(fullnodepath)
+                    If errCount <> Log.ErrCount Then
+                        errCount = Log.ErrCount
+                        .compGUIID.ClickItem(fullIndexPath)
+                    End If
+                ElseIf aqObject.IsSupported(.compGUIID, "SelectItem") Then
+                    .compGUIID.SelectItem(fullnodepath)
+                    If errCount <> Log.ErrCount Then
+                        errCount = Log.ErrCount
+                        .compGUIID.SelectItem(fullIndexPath)
+                    End If              
+                End If
+                                 
+            Case CLICK_ACTION
+                .compGUIID.ClickItem(fullnodepath)  
+                If errCount <> Log.ErrCount Then
+                    errCount = Log.ErrCount
+                    .compGUIID.ClickItem(fullIndexPath)
+                End If
+                                
+            Case DOUBLE_CLICK_ACTION
+                .compGUIID.DblClickItem(fullnodepath) 
+                If errCount <> Log.ErrCount Then
+                    errCount = Log.ErrCount
+                    .compGUIID.DblClickItem(fullIndexPath)
+                End If
+                                 
+            Case RIGHT_CLICK_ACTION
+                .compGUIID.ClickItemR(fullnodepath)  
+                If errCount <> Log.ErrCount Then
+                    errCount = Log.ErrCount
+                    .compGUIID.ClickItemR(fullIndexPath)
+                End If
+                     
+            Case SELECT_SPECIAL_ACTION
+                If clickWithRightButton Then
+                    .compGUIID.ClickItemR fullnodepath, specialKey                 
+                Else
+                    .compGUIID.ClickItem fullnodepath, specialKey
+                End If
+                If errCount <> Log.ErrCount Then
+                    errCount = Log.ErrCount
+                    If clickWithRightButton Then
+                        .compGUIID.ClickItemR fullIndexPath, specialKey                 
+                    Else
+                        .compGUIID.ClickItem fullIndexPath, specialKey
+                    End If
+                End If                 
+                
+        End Select
+        if errCount = Log.ErrCount then            
+            .statuscode = SDNoScriptFailure
+            LogMessage .windowname &":"& .compname &" "& .testcommand & _
+                                   " with path " & tableValue & _
+                                   " ["& fullnodepath &"] successful.", _
+                                   PASSED_MESSAGE, ""
+        else
+            .statuscode = SDGeneralScriptFailure
+            LogMessage "Unsuccessful "& .TestCommand &" with path "& tableValue & _
+                       " in table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, ""
+            exit Sub
+        end if
+    End With
+
+End Sub
+
+'############################################################################
+'#
+'#   PerformUnverifiedAction (EXPAND_ACTION)
+'#
+'#      JUL 10, 2014    (Carl Nagle) Move "Unverified" commands here
+'#
+'############################################################################
+Sub PerformUnverifiedAction (action) 
+
+    Dim status
+
+    Dim tableValue
+    Dim matchIndex, matchCount
+    
+    Dim fullnodepath, fullIndexPath
+    Dim TreewItems
+ 
+    Dim errCount
+    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+        
+        tableValue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if tableValue = "" then
+            LogMessage "Missing required Node Text for TreeView:"& .testcommand & _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+        
+        'see if we are selecting the Nth item, instead of the first        
+        matchCount = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        matchIndex = 1
+        if Len(matchCount) > 0 then
+          if IsNumeric(matchCount) then
+              matchIndex = matchCount
+          else
+              if UCASE(Left(matchCount, 6)) = "INDEX=" then 
+                  matchIndex = CINT(Mid(matchCount,7))
+              end if
+          end if
+        end if
+        
+        if matchIndex < 1 then matchIndex = 1
+        fullIndexPath = -1
+        
+        SAFSDebug "Tree node's fullpath passed in: "& tableValue & " ", DEBUG_INFO   
+        
+        '---  Junwu
+        On Error Resume Next  
+        
+        Set TreewItems = .compGUIID.wItems
+        if Err.Number <> 0 then
+            'Only a failure if we are trying for matchIndex > 1
+            if matchIndex > 1 then 
+              LogMessage "Could not examine wItems for TreeView:"& .TestCommand &" with matchIndex > 1 "& _
+                         "from table "& .FileName &" at line "& _
+                         .LineNumber, FAILED_MESSAGE, .inputrecord
+              exit Sub
+            end if
+        end if    
+        
+        'get full node path by its input tableValue
+        if matchIndex > 1 then
+          SAFSDebug .compname & " Node:" & tableValue &" matchIndex "& matchIndex &" must be partially verified.", DEBUG_INFO
+          status = GetNodeByText(.compGUIID, TreewItems, tableValue, 0, matchIndex, fullnodepath, fullIndexPath)
+          'wild casting is NOT supported for UNVERIFIED commands with matchIndex > 1?
+          if status <> 0 then
+              SAFSDebug .compname & " Node:" & tableValue &" can NOT be found.  "& _
+                        "Unable to process with matchIndex > 1.", DEBUG_WARN
+              LogMessage "Could not examine wItems for TreeView:"& .TestCommand &" with matchIndex="& matchIndex & _
+                         " from table "& .FileName &" at line "& _
+                         .LineNumber, FAILED_MESSAGE, .inputrecord
+              exit Sub
+          end if
+        else
+          SAFSDebug .compname & " Node:" & tableValue &" will be sought UNVERIFIED.  ", DEBUG_INFO
+          'still SAFS delimited
+          fullnodepath=tableValue
+        end if
+           
+        fullnodepath = ConvertFullNodePathToWorkItem(fullnodepath)
+        SAFSDebug "Attempting "& action & " on the full node path : "& fullnodepath, DEBUG_INFO   
+        
+        'perform action
+        .windowGUIID.Activate
+        
+        'Use errCount to record
+        errCount = Log.ErrCount
+
+        Select Case action
+        
+            Case EXPAND_ACTION
+                .compGUIID.ExpandItem(fullnodepath)
+                If errCount <> Log.ErrCount Then
+                    if fullIndexPath > -1 then .compGUIID.ExpandItem(fullIndexPath)
+                End If
+                
+            Case COLLAPSE_ACTION
+                .compGUIID.CollapseItem(fullnodepath)
+                If errCount <> Log.ErrCount Then
+                    if fullIndexPath > -1 then .compGUIID.CollapseItem(fullIndexPath)
+                End If
+                                
+            Case SELECT_ACTION
+                'For WPF application, the method SelectItem doesn't exist :-(
+                'We can use ClickItem instead
+                'SelectItem doesn't work stablely, use ClickItem firstly
+                If aqObject.IsSupported(.compGUIID, "ClickItem") Then
+                    .compGUIID.ClickItem(fullnodepath)
+                    If errCount <> Log.ErrCount Then
+                        if fullIndexPath > -1 then .compGUIID.ClickItem(fullIndexPath)
+                    End If
+                ElseIf aqObject.IsSupported(.compGUIID, "SelectItem") Then
+                    .compGUIID.SelectItem(fullnodepath)
+                    If errCount <> Log.ErrCount Then
+                        if fullIndexPath > -1 then .compGUIID.SelectItem(fullIndexPath)
+                    End If              
+                End If
+                                 
+            Case CLICK_ACTION
+                .compGUIID.ClickItem(fullnodepath)  
+                If errCount <> Log.ErrCount Then
+                    if fullIndexPath > -1 then .compGUIID.ClickItem(fullIndexPath)
+                End If
+                                
+            Case DOUBLE_CLICK_ACTION
+                .compGUIID.DblClickItem(fullnodepath) 
+                If errCount <> Log.ErrCount Then
+                    if fullIndexPath > -1 then .compGUIID.DblClickItem(fullIndexPath)
+                End If
+                                 
+            Case RIGHT_CLICK_ACTION
+                .compGUIID.ClickItemR(fullnodepath)  
+                If errCount <> Log.ErrCount Then
+                    if fullIndexPath > -1 then .compGUIID.ClickItemR(fullIndexPath)
+                End If
+                                     
+        End Select
+        .statuscode = SDNoScriptFailure
+        LogMessage .windowname &":"& .compname &" "& .testcommand & _
+                                " with path " & tableValue & _
+                                " ["& fullnodepath &"] attempted.", _
+                                GENERIC_MESSAGE, ""
+    End With
+
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub CaptureTreeDataToFile ()
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to capture tree data (CompareData) to a specified file.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------
+'#
+'#       5      Output text filename.  Relative paths from the project directory
+'#              can be used.
+'#      [6]     (Optional) Full Tree Branch to capture.  If ommitted, it will default to header
+'#              and all Branches/Nodes are captured.
+'#
+'#      [7]     (Optional) IndentMark to be used to format the output file.  IndentMark is used to separate
+'#              the tree nodes and the tree parent branches. The default value is the tab char (chr(9)).
+'#
+'#      [8]     (Optional) take "UTF-8" as default encoding. "UTF-8" or "ANSI"
+'#
+'#      IndentMark to be used to format the output file.  IndentMark is used to separate
+'#              the tree nodes and the tree parent branches. The default value is the tab char (chr(9)).
+'#
+'# Author: Junwu Ma
+'# Date: DEC 22, 2011
+'############################################################################
+Sub CaptureTreeDataToFile()
+
+    Dim i, status, pos
+    Dim outputFile, branch, indentMark, testpath, testdata, encoding, stringBuf, indentStr
+    Dim itemArray(), indexArray()
+    Dim IsCreateFile
+    
+    with otrd
+
+        'set default failure mode
+        .statuscode = SDGeneralScriptFailure
+
+        .windowGUIID.Activate
+
+        'get and validate file specification
+        outputFile = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if outputFile = "" then
+            LogMessage "No file specified for "& .testcommand &" in table "& _
+                       .filename &" at line "& .linenumber, _
+                       FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+          
+        status = inStr(1, outputFile, "\", 0)
+        if status = 0 then
+            testpath = GetDDETestDirectory() & outputFile
+        else
+            if (mid(outputFile, 2, 2) = ":\") or (left(outputFile, 2) = "\\") then
+                testpath = outputFile
+            else
+                if (left(outputFile, 1) = "\") then outputFile = mid(outputFile, 2)
+                testpath = GetDDEProjectDirectory() & outputFile            
+            End if     
+        End if
+
+        'get branch
+        branch = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if branch = "" then
+            LogMessage "Proceeding with no Tree branch/node specified for " & .testcommand &" in table "& _
+                       .filename &" at line "& .linenumber, _
+                       GENERIC_MESSAGE, ""
+        end if
+        
+        'get indentMark
+        indentMark = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        if (indentMark = "") then
+            indentMark = chr(9)    'default to tab char
+        end if
+        
+        'get file encoding
+        encoding = GetTrimmedQuotedField(.inputrecord, 8, .separator)
+        if encoding = "" then
+            encoding = "UTF-8"                       
+        end if
+        
+        SAFSDebug "CaptureTreeDataToFile... ouput file:'"& testpath & "'", DEBUG_INFO
+        SAFSDebug "......branch:" & branch & " indentMark:" & indentMark & " encoding: " & encoding, DEBUG_INFO         
+        
+        'get the object data
+        Redim itemArray(0)
+        ReDim indexArray(0)
+        'get nodes for the tree's wItems
+        call GetTreeItems(.compGUIID, .compGUIID.wItems, "", itemArray, "", indexArray)  
+
+        IsCreateFile = true
+        'create the output file with empty content
+        status = CreateFile(testpath)
+                
+        For i=0 to UBound(itemArray)-1
+            SAFSDebug "tree node:'"& itemArray(i), DEBUG_INFO 
+            'search NODE_DELIMIT in itemArray(i), a NODE_DELIMIT represents a tree parent in 
+            'branch, need to be removed, using Indent Tab instead. 
+            '' a->b->c get the last node and convert it to "\t"+"\t"+"c" 
+            indentStr = "" 
+            
+            'only accept the node under the defined branch
+            if branch = "" or ( branch <> "" and inStr(itemArray(i), branch) = 1 ) then
+                stringBuf = itemArray(i)
+                Do 
+                    pos = inStr(stringBuf, NODE_DELIMIT)
+                    if pos > 0 then
+                        indentStr = indentStr + indentMark 'take indentMark(tab char) as indent
+                        stringBuf = Mid(stringBuf, pos+Len(NODE_DELIMIT))
+                    end if 
+                Loop until pos = 0 'not found NODE_DELIMIT
+           
+                testdata = indentStr + stringBuf 
+
+                if IsCreateFile then
+                    status = WriteToFile2(testpath, testdata, false, encoding) 
+                    IsCreateFile = false
+                else
+                    status = WriteToFile2(testpath, testdata, true, encoding)           
+                end if
+                
+                if status <> 0 then exit for
+            end if    
+        Next
+        
+        If status <> 0 Then
+            .statuscode = SDGeneralScriptFailure  
+            SAFSDebug "Met Error when writing to file " & testpath & _
+                      ", Error code: " & CStr(status), DEBUG_WARN 
+            LogMessage "Possible file path error processing "& .testcommand &" in table "& _
+                   .filename &" at line "& .linenumber, _
+                   FAILED_MESSAGE, .inputrecord                      
+        else
+            .statuscode = SDNoScriptFailure 
+            LogMessage .testcommand & " performed on " & .compname & "; output file '" & testpath & "'.", _
+                   PASSED_MESSAGE, ""  
+        End If
+
+    End With
+
+End Sub
+
+'############################################################################
+'#
+'#   Sub TVFVerifyTreeContainsNode (mode As Integer)
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to verify that a provided node is found in a tree.
+'#
+'#      This command will only work on GUI tree components that Robot can 
+'#      successfully perform an ObjectData VP on.  The user does not have to
+'#      create an ObjectData VP for the script for this command to work.
+'#      This will be done automatically at runtime.
+'#
+'#      Since the basic functionality is the same, this routine can be used 
+'#      to both verify that a node is found in a tree (VerifyTreeContainsNode)
+'#      and set a user-defined variable with those results (SetTreeContainsNode).
+'#
+'#      The routine expects that Global StepDriverTestInfo contains all the 
+'#      information it needs to perform its function (like logging).
+'#
+'#      The routine will set the StepDriverTestInfo.statuscode and
+'#      log any pass/fail info using the StepDriverTestInfootrd LogFacility.
+'#
+'#
+'# FUNCTION PARAMETER:
+'#      
+'#      mode    0 = exact match of each node required
+'#              1 = case-insensitive partial match allowed
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------
+'#
+'#       5      The name of the node to verify.
+'#
+'#       6     (For SetTreeContainsNode/PartialMatch command only) The name of the 
+'#              variable which gets assigned the result.  This varible will be set
+'#              to the string 'TRUE' if the node is found, or the string 'FALSE' 
+'#              if the node is not found.
+'#
+'#
+'# ERRORS:
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyTreeContainsNode(mode, setVarible)
+    Dim searchNodepath
+    Dim fullnodepath, fullIndexPath
+    Dim variableName
+    Dim TreewItems
+    Dim status 
+	
+    with otrd
+
+        'set default failure mode
+        .statuscode = SDGeneralScriptFailure
+        
+        'get searchNodepath
+        searchNodepath = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if searchNodepath = "" then
+            LogMessage "No node specified for "& .testcommand &" in table "& _
+                       .filename &" at line "& .linenumber, _
+                       FAILED_MESSAGE, .inputrecord
+            exit sub
+        end if
+        
+        if setVarible then
+            variableName = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+            if variableName = "" then
+                LogMessage "No variable name specified for "& .testcommand &" in table "& _
+                       .filename &" at line "& .linenumber, _
+                       FAILED_MESSAGE, .inputrecord
+                exit sub
+            end if
+        end if
+                
+        on Error resume next
+        
+        .windowGUIID.Activate         
+
+        if mode <> 1 then 
+            mode = 0
+        end if
+        
+        'set the tree nodes
+        Set TreewItems = .compGUIID.wItems
+        if Err.Number <> 0 then 
+            LogMessage "Could not examine wItems for TreeView:"& .TestCommand &" "& _
+                       "from table "& .FileName &" at line "& _
+                       .LineNumber, FAILED_MESSAGE, ""
+            exit Sub
+        end if    
+        
+        'get full node path by its input searchNodepath
+        status = GetNodeByText(.compGUIID, TreewItems, searchNodepath,mode=0, 1, fullnodepath, fullIndexPath) 
+        
+        if status <> 0 then
+            LogMessage .compname +" Node:"+ tableValue +" can NOT be found.  "+ _
+                               "See table " + .filename + " at line " + _
+                               CStr(.linenumber), FAILED_MESSAGE, ""
+            if setVarible then 
+                DDVSetVariableValue variableName, "FALSE"
+                LogMessage .compname +" Node:"+ tableValue +" can NOT be found.  "+ _
+                               "See table " + .filename + " at line " + _
+                               CStr(.linenumber), FAILED_MESSAGE, "FALSE was assigned to variable " & variableName   
+            else
+                LogMessage .compname +" Node:"+ tableValue +" can NOT be found.  "+ _
+                               "See table " + .filename + " at line " + _
+                               CStr(.linenumber), FAILED_MESSAGE, ""           
+            end if
+                     
+            exit Sub
+        end if  
+        
+        if setVarible then
+            
+            DDVSetVariableValue variableName, "TRUE"
+            LogMessage .testcommand & " found node '" & searchNodepath & "' in " & .compname & ".", _
+                   PASSED_MESSAGE, "TRUE was assigned to variable " & variableName      
+        else
+            LogMessage .testcommand & " found node '" & searchNodepath & "' in " & .compname & ".", _
+                   PASSED_MESSAGE, ""
+        end if
+        .statuscode = SDNoScriptFailure
+              
+    End with
+End Sub
+
+
+'############################################################################
+' Functions for Tree in .NET,WPF,Java,Win -- Junwu 2011.9.30
+'############################################################################
+'convert full node path to the item string with which as argument TC can do operations
+'return:
+Function ConvertFullNodePathToWorkItem(fullNodePath)
+    Dim WorkItem
+    WorkItem = Replace(fullNodePath, NODE_DELIMIT, TCNODE_DELIMIT)
+    if otrd.environment = "JAVA" then
+        if otrd.compGUIID.rootVisible = True then
+           'do NOT prepend separator
+        else
+            WorkItem = TCNODE_DELIMIT & WorkItem
+        end if
+    else 
+        WorkItem = TCNODE_DELIMIT & WorkItem
+    end if
+    ConvertFullNodePathToWorkItem = WorkItem
+End Function
+
+' Add wildcast for each item of the nodePath
+' nodePath: is the whole node path
+' mode: 0 represents exact match, return the whole nodePath as it is. 
+'       1 represents partial match, add wildcast for node item 
+Function GetWildCastFullPath(nodePath, mode)
+
+    If mode<>0 Then
+        Dim i, nodeItems
+        nodeItems = Split(nodePath, NODE_DELIMIT)
+        For i=0 To UBound(nodeItems)
+            If i=0 Then
+                GetWildCastFullPath = "*" &nodeItems & "*"
+            Else   
+                GetWildCastFullPath = GetWildCastFullPath & NODE_DELIMIT & "*" &nodeItems & "*"
+            End If
+        Next
+    Else
+        GetWildCastFullPath = nodePath
+    End If
+    
+End Function
+
+' see if sourcePath contains matchPath
+' findPath:  target node path for searching        "abc->efg" ; delimitor:->
+' sourcePath: source node path for searching from   "abcd->efgh" ; delimitor:->
+' exactMatch: if it is exactly match
+' return: true, found and match;  false: not match
+Function IsMatchNodePath(findpath, sourcePath, exactMatch)
+    Dim i
+    Dim matchArray
+    Dim sourceArray
+    Dim matchStatus
+    Dim matchOffset
+    
+    matchArray = Split(findPath, NODE_DELIMIT)
+    sourceArray = Split(sourcePath, NODE_DELIMIT) 
+
+    matchOffset = 0
+    if otrd.environment = "JAVA" then
+        if sourceArray(0) = "root" And Not matchArray(0) = "root" then
+            matchOffset = 1
+        end if
+    end if
+         
+    if UBound(matchArray) <> UBound(sourceArray)- matchOffset then
+        IsMatchNodePath = false
+        exit Function 
+    end if 
+
+    IsMatchNodePath = true        
+    for i = 0 To UBound(matchArray)
+        if exactMatch then
+            matchStatus = (StrComp(sourceArray(i + matchOffset), matchArray(i)) = 0)   
+        else    
+            matchStatus = (InStr(sourceArray(i + matchOffset), matchArray(i)) > 0)
+        end if 
+        if matchStatus = false then 
+            IsMatchNodePath = false
+            exit for  
+        end if 
+    next
+End Function
+
+'guiTreeItems: property 'wItem' of Tree which is a collection of items
+'treeNode:  TreeView or TreeViewItem TC Object
+'nodepath: input node path for search in the tree. "paren->child"
+'exactMatch: true exactly match; false partial match
+'index: matching index, starting from 1
+'fullnodepath: output all matching full node path
+'fullIndexPath: output full node index path for 'matching full node path', like "|[0]|[1]|"
+'return: -1 no match; 0 found match; fullnodepath valide
+'#      JUL 24, 2012    (Lei Wang)  Return the 'full index path' for tree node.
+Function GetNodeByText(treeNode, guiTreeItems, nodepath, exactMatch, index, fullnodepath, fullIndexPath)
+    Dim i
+    Dim itemArray() ' a dynimic array
+    Dim indexArray() ' a dynimic array 
+    Dim matchCount
+    Dim compStatus
+    
+    GetNodeByText = -1 
+
+    Redim itemArray(0)
+    ReDim indexArray(0)
+    '  otrd.compGUIID.wItems  error message
+    call GetTreeItems(treeNode, guiTreeItems, "", itemArray, "", indexArray)  
+
+    matchCount = 0
+    For i=0 to UBound(itemArray)-1
+        'SAFSDebug "Matching '" &nodepath& "'='" & itemArray(i) &"'?", DEBUG_DEBUG
+        compStatus = IsMatchNodePath(nodepath, itemArray(i), exactMatch)
+        if compStatus then
+            matchCount = matchCount + 1
+            ' see if match the index
+            if matchCount = index then
+                fullnodepath = itemArray(i)
+                fullIndexPath = indexArray(i) 
+                GetNodeByText = 0
+                exit for
+            end if
+        else
+            'SAFSDebug "Fail to match '" &nodepath& "'='" & itemArray(i) &"'?", DEBUG_DEBUG               
+        end if 
+    Next
+End Function
+
+Function GetObjectData(tcObj, ByRef itemArray())
+   Dim indexArray()
+   
+   Err.Clear
+   Call GetTreeItems(tcObj, tcObj.wItems, "", itemArray, "", indexArray)
+   
+   If Err.Number<>0 Then
+       SAFSDebug "TreeViewFunctions.GetObjectData: Met some errors, Error="&Err.Number, DEBUG_DEBUG
+       GetObjectData = False   
+   Else
+       GetObjectData = True
+   End If
+   
+End Function
+
+'a recusive call to get all nodes from a tree.wItem; called by GetNodeByText
+'treeNode:  TreeView or TreeViewItem TC Object
+'TreeWItem: property 'wItem' of Tree which is a collection of items, TreeViewItemCollection items
+'parentNodeText: input should be ""
+'itemArray(): return an array contains all tree nodes with fullnodepath like "parent->child1->child2"
+'             Valide items from 0 to UBound(itemArray)-1; the last item is invalide.
+'parentIndexPath: input should be ""
+'indexArray(): return an array contains corresponding index for those fullNodePath like "|[0]|[1]|"
+'#      JUL 24, 2012    (Lei Wang)  Generate the 'full index path' for all tree nodes. 
+'#                                Try to get tree node's value from TreeViewItem Object. See defect S0880318 
+Sub GetTreeItems(treeNode, TreeWItem, parentNodeText, ByRef itemArray(), parentIndexPath, ByRef indexArray())
+    Dim i
+    Dim upper
+    Dim count
+    Dim nodeText
+    Dim propertyStr
+    Dim Items
+    Dim fullPath, fullIndex
+    Dim propArray, valueArray 'properties used to find TreeViewItem
+    Dim treeViewItem
+    Dim textPropArray, textValueArray 'properties used to find TextBlock
+    Dim textBlock
+    Dim panelPropArray, panelValueArray 'properties used to find StackPanel
+    Dim stackPanel
+    on Error resume next
+  
+    If IsNull(TreeWItem) Or IsEmpty(TreeWItem) Or TreeWItem Is Nothing then 
+        Exit sub
+    end if
+    
+    count = TreeWItem.Count
+    If Err.Number <> 0 Then
+        Err.Clear
+        exit sub
+    end if
+    
+    'Set properties to that of WPF application, these properties
+    'can be modified later.
+    propArray = Array("ClrClassName", "WPFControlIndex")
+    valueArray = Array("*Item*", 1)    'TreeViewItem
+    
+    textPropArray = Array("ClrClassName")
+    textValueArray = Array("*TextBlock*") 'TextBlock
+    
+    panelPropArray = Array("ClrClassName")
+    panelValueArray = Array("*StackPanel*") 'StackPanel
+        
+    with TreeWItem
+        for i = 0 to count-1
+            propertyStr = ".Item(" & Trim(CStr(i)) & ")"
+            nodeText = Eval(propertyStr & ".Text") 
+    
+            valueArray(1) = i+1
+            Set treeViewItem = Nothing
+            If nodeText="" And NOT IsNull(treeNode) then 
+                if treeNode.Exists Then
+                  SAFSDebug "Try to get "&CStr(i+1)&" TreeViewItem.", DEBUG_DEBUG
+                  Set treeViewItem = treeNode.FindChild(propArray, valueArray)
+            
+                  If treeViewItem.Exists Then                
+                      If nodeText="" Then
+                          SAFSDebug "Can't get the text node's value from wItems.Item("&CStr(i)&").Text.", DEBUG_WARN
+                          SAFSDebug "Try to get item value from TreeViewItem Object.", DEBUG_DEBUG
+
+                          If aqObject.IsSupported(treeViewItem, "WPFControlText") Then
+                              nodeText = treeViewItem.WPFControlText
+                          End If
+                          If nodeText = "" Then
+                              'We need to find the direct child (StackPanel) of TreeViewItem, if we try to find the 
+                              'TextBlock from the TreeViewItem, sometimes it will not return its blocktext
+                              'it may return the blocktext of grandchild.
+                              Set stackPanel = treeViewItem.FindChild(panelPropArray, panelValueArray, 0)
+                              If stackPanel.Exists Then
+                                  Set textBlock = stackPanel.FindChild(textPropArray, textValueArray, 3)
+                              Else
+                                  Set textBlock = treeViewItem.FindChild(textPropArray, textValueArray, 3)
+                              End If
+                            
+                              If textBlock.Exists Then
+                                  If aqObject.IsSupported(textBlock, "WPFControlText") Then
+                                      nodeText = textBlock.WPFControlText
+                                  End If
+                                  If nodeText="" And aqObject.IsSupported(textBlock, "Text") Then
+                                      nodeText = textBlock.Text
+                                  End If                             
+                              End If
+                       
+                          End If
+                      End If
+                  Else                
+                      SAFSDebug "Can't find the TreeViewItem object.", DEBUG_WARN
+                      'Set propArray to other properties
+                      'propArray = Array("ClrClassName", "WPFControlIndex")
+                  End If
+              End If           
+            End If
+
+            SAFSDebug "TreeViewItem's nodeText=" & nodeText, DEBUG_DEBUG
+                        
+            'update array
+            upper = UBound(itemArray)
+            Redim preserve itemArray(upper + 1)
+            if parentNodeText = "" then
+                fullPath = nodeText
+            else    
+                fullPath = parentNodeText & NODE_DELIMIT & nodeText
+            end if    
+            itemArray(upper) = fullPath
+     
+            Redim preserve indexArray(upper + 1)
+            If parentIndexPath="" Then
+                fullIndex = TCNODE_DELIMIT & "[" & CStr(i) & "]"
+            Else
+                fullIndex = parentIndexPath & TCNODE_DELIMIT & "[" & CStr(i) & "]" 
+            End If
+            indexArray(upper) = fullIndex
+            
+            Set Items = Eval(propertyStr & ".Items")
+            Call GetTreeItems(treeViewItem, Items, fullPath, itemArray, fullIndex, indexArray)
+        Next
+    end with
+End Sub
+'############################################################################
+'#
+'#   Sub Main ()
+'#
+'# DESCRIPTION:
+'#
+'#      Entry point to process a StepDriver ACTION COMMAND on a TREEVIEW.
+'#      The routine merely reads the Global otrd.testcommand and 
+'#      calls the appropriate subroutine to process it.  
+'#
+'#      If the testcommand is unrecognized it will log a WARNING_MESSAGE and
+'#      exit with a WARNING status.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 02, 2006
+'# History:
+'#
+'#      OCT 02, 2006    Original Release
+'#
+'############################################################################
+
+Sub TreeViewMain()
+
+   Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+             FlexTreeViewFunctions.FlexTreeViewMain
+             Exit Sub  
+        Case DDU_HTML_ENVIRONMENT
+             SAFSDebug "Only Dojo TreeView in HTML is supported, others not implemented! ", DEBUG_INFO
+             DojoTreeViewFunctions.DojoTreeViewMain
+             Exit Sub                                     
+        Case Else
+            'continue for other domains with rest of code                             
+    End Select 
+    
+    On Error Resume Next 
+    with otrd
+
+        'the action and record type ARE supported in this library.        
+        SAFSDebug "TreeViewFunctions processing: "& otrd.testcommand, DEBUG_INFO  
+        
+        'do stuff in here
+        Select Case UCase(.testcommand)
+            
+            Case "CLICKUNVERIFIEDTEXTNODE"            
+                 PerformUnverifiedAction CLICK_ACTION                                              
+
+            Case "COLLAPSEUNVERIFIEDTEXTNODE"
+                 PerformUnverifiedAction COLLAPSE_ACTION                                              
+                  
+            Case "EXPANDUNVERIFIEDTEXTNODE"
+                 PerformUnverifiedAction EXPAND_ACTION                                              
+                  
+            Case "DOUBLECLICKUNVERIFIEDTEXTNODE", "ACTIVATEUNVERIFIEDTEXTNODE"            
+                 PerformUnverifiedAction DOUBLE_CLICK_ACTION                                              
+
+            Case "RIGHTCLICKUNVERIFIEDTEXTNODE", "SELECTUNVERIFIEDTEXTNODERIGHTCLICK"            
+                 PerformUnverifiedAction RIGHT_CLICK_ACTION                                              
+
+            Case "SELECTUNVERIFIEDTEXTNODE"
+                 PerformUnverifiedAction SELECT_ACTION                                              
+
+            Case "VERIFYSELECTEDNODE"
+            
+                VerifySelectedNode 0
+            
+            Case "VERIFYNODEUNSELECTED"
+            
+                VerifySelectedNode 1
+            
+            'Case "VERIFYSTATEICON"    Deprecated
+            
+                'VerifyStateIcon 0
+                
+            'Case "VERIFYSTATEICONUNSELECTED"    Deprecated
+            
+                'VerifyStateIcon 1
+                
+            'Case "SELECTSTATEICON"       Deprecated
+            
+                'SelectTextNode "Location=StateIcon"   '(to reuse the existing function)
+                
+            Case "EXPAND", "EXPANDTEXTNODE"
+            
+                PerformAction EXPAND_ACTION, 0
+            
+            Case "EXPANDPARTIAL"
+            
+                PerformAction EXPAND_ACTION, 1
+            
+            Case "COLLAPSE", "COLLAPSETEXTNODE"
+            
+                PerformAction COLLAPSE_ACTION, 0
+
+            Case "COLLAPSEPARTIAL"
+            
+                PerformAction COLLAPSE_ACTION, 1
+
+            Case "SELECT", "SELECTTEXTNODE"
+            
+                PerformAction SELECT_ACTION, 0
+
+            Case "SELECTPARTIAL"
+            
+                PerformAction SELECT_ACTION, 1
+
+            Case "CLICKTEXTNODE"
+            
+                PerformAction CLICK_ACTION, 0
+
+            Case "CLICKPARTIAL"
+            
+                PerformAction CLICK_ACTION, 1
+
+            Case "RIGHTCLICKTEXTNODE"
+
+                PerformAction RIGHT_CLICK_ACTION, 0
+                
+            Case "RIGHTCLICKPARTIAL"
+            
+                PerformAction RIGHT_CLICK_ACTION, 1
+
+            Case "DOUBLECLICKTEXTNODE"
+            
+                PerformAction DOUBLE_CLICK_ACTION, 0
+
+            Case "DOUBLECLICKPARTIAL"
+            
+                PerformAction DOUBLE_CLICK_ACTION, 1
+                
+            Case "CAPTURETREEDATATOFILE"
+
+                CaptureTreeDataToFile
+                
+            Case "VERIFYTREECONTAINSNODE"
+
+                VerifyTreeContainsNode 0, false
+                
+            Case "SETTREECONTAINSNODE"
+
+                VerifyTreeContainsNode 0, true
+                                
+            Case "VERIFYTREECONTAINSPARTIALMATCH"
+
+                VerifyTreeContainsNode 1, false
+                
+            Case "SETTREECONTAINSPARTIALMATCH"
+
+                VerifyTreeContainsNode 1, true                
+                
+            Case "SELECTTEXTNODESPECIAL"
+            
+                 PerformAction SELECT_SPECIAL_ACTION, 0
+
+            Case "SELECTPARTIALTEXTNODESPECIAL"
+            
+                 PerformAction SELECT_SPECIAL_ACTION, 1                                  
+            
+            Case Else
+
+                'GenericUnimplementedCommand
+                HandleGenericCommand
+            
+        End Select
+
+    End With
+    
+End Sub

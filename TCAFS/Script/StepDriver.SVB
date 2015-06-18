@@ -1,0 +1,1201 @@
+﻿Option Explicit
+'USEUNIT CheckBoxFunctions
+'USEUNIT ComboBoxFunctions
+'USEUNIT ComboEditBoxFunctions
+'USEUNIT CustomDriverCommands
+'USEUNIT CustomDriverCommands_X
+'USEUNIT CustomLogUtilities
+'USEUNIT CustomLogUtilities_X
+'USEUNIT CustomRecordTypes
+'USEUNIT CustomRecordTypes_X
+'USEUNIT CustomStatusUtilities
+'USEUNIT CustomStatusUtilities_X
+'USEUNIT CustomTestCommands
+'USEUNIT CustomTestCommands_X
+'USEUNIT CustomUtilities
+'USEUNIT CustomUtilities_X
+'USEUNIT DDDriverCommands
+'USEUNIT DDGUIUtilities
+'USEUNIT DDGUIUtilities_X
+'USEUNIT DDUtilities
+'USEUNIT DDUtilities_X
+'USEUNIT EditBoxFunctions
+'USEUNIT EngineCommands
+'USEUNIT GenericMasterFunctions
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT GenericObjectFunctions
+'USEUNIT GraphicControlFunctions
+'USEUNIT GroupBoxFunctions
+'USEUNIT HTMLDocumentFunctions
+'USEUNIT HTMLFunctions
+'USEUNIT HTMLImageFunctions
+'USEUNIT HTMLLinkFunctions
+'USEUNIT HTMLTableFunctions
+'USEUNIT ImageUtilities
+'USEUNIT ImageUtilities_X
+'USEUNIT LabelFunctions
+'USEUNIT ListBoxFunctions
+'USEUNIT ListViewFunctions
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT MenuUtilities
+'USEUNIT MenuUtilities_X
+'USEUNIT PopupMenuFunctions
+'USEUNIT PushButtonFunctions
+'USEUNIT RadioButtonFunctions
+'USEUNIT SSTreeFunctions
+'USEUNIT ScrollBarFunctions
+'USEUNIT STAFUtilities
+'USEUNIT StepDriver_X
+'USEUNIT StringUtilities
+'USEUNIT StringUtilities_X
+'USEUNIT TabControlFunctions
+'USEUNIT ToolBarFunctions
+'USEUNIT TreeViewFunctions
+'USEUNIT TreeViewFunctions_X
+'USEUNIT V2003Functions
+'USEUNIT VSFlexGridFunctions
+'USEUNIT WindowFunctions
+'USEUNIT FlexMenuBar
+'USEUNIT DataGrid
+'USEUNIT FlexDataGrid
+
+'##############################################################################
+'#
+'#    StepDriver.SVB  SCRIPT
+'#
+'#      JUN 01, 2012    (Lei Wang)    Modify function SDGetMappedObjectType() and GetCompType():
+'#                                  Move the common logic to function SDGetObjectClassName().
+'#                                  Modify function SDProcessTestRecord(): set .environment for PopupMenu
+'#      AUG 06, 2012    (Lei Wang)    Modify funciton SDInitObjectTypeMaps(): load custom map file before standard one.
+'#                                  See defect S0885464
+'#      SEP 07, 2012    (Lei Wang)    Modify function SDGetMappedObjectType(): When try to get the mapped type of an object,
+'#                                  the object's classname has higher priority than TC Name. So we try to loop the keys and
+'#                                  try each of them to match with the object's class name, if no matched then we will loop
+'#                                  again the keys to match with the object's TC Name. See defect S0894700
+'############################################################################## 
+        
+Sub Main()
+
+    Dim oshell
+    Dim status
+    Dim engine
+    Dim record
+    Dim shutdown
+    Dim nArgs,aArg, nIndex, cfgFile, atemp
+    
+    shutdown = False
+    STFSMOnly = False
+    Set oshell = CreateObject("WScript.Shell")
+    SDsecsWaitForWindow = 30
+    SDsecsWaitForComponent = 30
+    SdepthLevel = 5
+    engine = DEFAULT_TC_CLIENT
+    InitSTAFClientInterface engine
+    
+    atemp = BuiltIn.ParamStr(0)
+    SAFSDEBUG "TCAFS sees executable parameter(0): "& atemp, DEBUG_INFO
+    
+    Dim p, iVerMajor, iVerMinor    
+    Set p = Sys.WaitProcess(SDTEST_EXECUTE, 100)
+    If (p.Exists) Then 
+        SAFSDEBUG "TCAFS sees TestExecute running!", DEBUG_INFO
+        TCExecutable = SDTEST_EXECUTE
+        Set oTestComplete = GetObject(,"TestComplete.TestExecuteApplication")
+    else
+        Set p = Sys.WaitProcess(SDTEST_COMPLETE, 100)
+        If (p.Exists) Then 
+            SAFSDEBUG "TCAFS sees TestComplete running!", DEBUG_INFO
+            TCExecutable = SDTEST_COMPLETE
+            Set oTestComplete = GetObject(,"TestComplete.TestCompleteApplication")
+        end if
+    end if
+    if (p.Exists) then
+        iVerMajor = aqConvert.VarToInt(p.FileVersionInfo.MajorPart)
+        iVerMinor = aqConvert.VarToInt(p.FileVersionInfo.MinorPart)
+        SAFSDEBUG "TCAFS sees "& aqString.Format("Version # is: %i.%i", iVerMajor, iVerMinor), DEBUG_INFO
+        TCExecutableVersion = aqConvert.VarToFloat(aqString.Format("%i.%i", iVerMajor, iVerMinor))
+    end if
+    SAFSDEBUG "TCExecutable="& TCExecutable &", TCExecutableVersion="& TCExecutableVersion, DEBUG_INFO
+        
+    nArgs = BuiltIn.ParamCount    
+    For nIndex = 1 to nArgs
+      aArg = BuiltIn.ParamStr(nIndex)
+      SAFSDEBUG "TCAFS sees command-line parameter: "& aArg, DEBUG_INFO
+      if (StrComp(Left(aArg,21),"/safs.project.config:",1)=0) then
+        cfgFile = Mid(aArg,22)
+        if(Len(cfgFile)>0) then
+          aArg = GetFileConfigurationSetting("SAFS_TC", "convertSAFSInputKeysSyntax", cfgFile)
+          if (Len(aArg)>0) then
+            doConvertSAFSInputKeysSyntax = ConvertBool(aArg)
+            SAFSDebug "SU convert SAFS InputKeys Syntax set to: "& CStr(doConvertSAFSInputKeysSyntax), DEBUG_INFO
+          end if        
+          aArg = GetFileConfigurationSetting("SAFS_TC", "convertSAFSItemPathSyntax", cfgFile)
+          if (Len(aArg)>0) then
+            doConvertSAFSItemPathSyntax = ConvertBool(aArg)
+            SAFSDebug "SU convert SAFS Item Path Syntax set to: "& CStr(doConvertSAFSItemPathSyntax), DEBUG_INFO
+          end if        
+          aArg = GetFileConfigurationSetting("SAFS_TC", "secsWaitForWindow", cfgFile)
+          if (Len(aArg)>0) then
+            atemp = CInt(0)
+            On Error Resume Next
+            atemp = CInt(aArg)
+            if((IsNumeric(atemp)) and (atemp > 0)) then SDsecsWaitForWindow = atemp
+            SAFSDebug "SD secsWaitForWindow set to: "& aArg, DEBUG_INFO
+          end if        
+          aArg = GetFileConfigurationSetting("SAFS_TC", "secsWaitForComponent", cfgFile)
+          if (Len(aArg)>0) then
+            atemp = CInt(0)
+            On Error Resume Next
+            atemp = CInt(aArg)
+            if((IsNumeric(atemp)) and (atemp > 0)) then SDsecsWaitForComponent = atemp
+            SAFSDebug "SD secsWaitForComponent set to: "& aArg, DEBUG_INFO
+          end if
+          aArg = GetFileConfigurationSetting("SAFS_TC", "TFSMOnly", cfgFile)
+          if (Len(aArg)>0) then
+            STFSMOnly = ConvertBool(aArg)
+            SAFSDebug "SD TFSM only mode : "& CStr(STFSMOnly), DEBUG_INFO
+          end if 
+          aArg = GetFileConfigurationSetting("SAFS_TC", "depthLevel", cfgFile)
+          if (Len(aArg)>0) then
+            atemp = CInt(0)
+            On Error Resume Next
+            atemp = CInt(aArg)
+            if((IsNumeric(atemp)) and (atemp > 0)) then SdepthLevel = atemp
+              SAFSDebug "SD depthLevel set to: "& aArg, DEBUG_INFO
+            end if         
+          end if
+      end if
+    Next
+            
+    SDInitObjectTypeMaps
+    status = ostaf.resetHookEvents(engine)
+    status = ostaf.postEvent(engine & "Start")
+    
+    'BEGIN OUR HOOK LOOP HERE
+    '================================================================
+    DO
+        status = ostaf.postEvent (engine & "Ready")
+        if status <> 0 Then
+            Log.Message("Engine did not register properly Status: " & status)
+        end If
+        
+        status = ostaf.getNextHookTestEvent(engine)
+        
+        otrd.reinitialize()
+
+        status = ostaf.getTestRecordDataVariant(otrd)
+
+        
+        if otrd.InputRecord = "SHUTDOWN_HOOK" then shutdown = true
+
+        if (NOT shutdown) then
+	
+    	'===== this is where we do the work =======
+            
+                On Error Resume Next
+
+                status = processRequest()        
+                                
+    	          On Error Goto 0
+	    
+    	'===== this is where we do the work =======
+                'otrd.setStatusCode = status
+                status = ostaf.sendTestRecordResultsVariant(otrd)
+                status = ostaf.setHookTestResultsEvents(engine, 2)
+                status = ostaf.resetEvent(engine & "Running")
+        else
+            'release any waiting driver
+    	      status = ostaf.postEvent(engine &"Results")
+        end if
+
+    LOOP while (Not shutdown)
+    '==================================================================
+    ' END OF HOOK LOOP
+
+    status = ostaf.resetHookEvents(engine)
+    status = ostaf.postEvent(engine &"Shutdown")
+      
+    status = ostaf.unRegisterProcess()
+
+    Set oshell = Nothing
+    Set oTestComplete = Nothing
+
+End Sub
+
+'###################################################################
+'#
+'# Function processRequest(otrd As Variant) As Long
+'#
+'# DESCRIPTION:
+'#
+'#     Process the inputrecord dispatched by an external driver.
+'#     All test record data is stored in the otrd TestRecordData 
+'#     object that must be passed in.
+'#
+'#     .STAFHelper() also provides the live instance of a 
+'#     registered STAFUtilities object for talking with the SAFS 
+'#     services (logging, appmaps, etc.) and other STAF-related calls.
+'#
+'#     Example:
+'#         
+'#         Set ostaf = .STAFHelper()
+'#     
+'#     The routine should log any generic\pass\warn\fail messages and 
+'#     set results before returning:
+'#     
+'#         otrd.setStatusCode(lValue)
+'#         otrd.setStatusInfo(sValue)
+'#
+'#     Common status codes:
+'#     
+'#         -2 A warning occurred.
+'#     
+'#         -1 No known error or warning occurred.
+'#         
+'#          0 An error occurred.
+'#         
+'#          2 An IO (file/input) error occurred.
+'#         
+'#          4 No processing has occurred.
+'#         
+'#          8 An  EXIT TABLE Driver Command flags premature termination.
+'#         
+'#         16 Driver, IGNORE this status code. 
+'#         
+'#  PARAMETERS:
+'#     
+'#     otrd  TestRecordData COM object passed in from our HOOK loop.
+'#     
+'#  RETURNS:
+'#     
+'#     statuscode resulting from processing
+'#     
+'###################################################################
+Private Function processRequest ()
+
+      Dim status
+      Dim message
+      Dim details
+      Dim ostaf
+      Dim oresult
+      Dim Result
+      Set oResult = CreateObject("DDVariableStore.STAFResult")
+      Set ostaf = otrd.getSTAFHelper()
+         
+      SDInitLocalVars
+
+      With otrd
+      
+        'set OK (NO_SCRIPT_FAILURE)
+        .StatusCode = DDU_NO_SCRIPT_FAILURE
+        .StatusInfo = ""
+
+	      SAFSDebug "StepDriver processing: "& .inputrecord, DEBUG_INFO
+	
+        If .recordType <> "" Then
+            On Error Resume Next 
+        	  Select Case UCase(.recordType)
+
+                Case DDU_DRIVER_COMMAND, DDU_DRIVER_COMMAND_FAILOK, DDU_DRIVER_COMMAND_WARNOK
+                                        
+                    otrd.setTestCommand(GetTrimmedQuotedField(.inputrecord, 2, .separator))
+                    ' is this the same as setCommand?               
+                    .testcommand = GetTrimmedQuotedField(.inputrecord, 2, .Separator)
+                    if .testcommand = "" then
+                        Log.Message "No Driver Command found."
+                    end if
+                    Result = DDEDriverCommand (-1)
+                        
+                Case DDU_ENGINE_COMMAND
+                                        
+                     Result = SDProcessEngineRecord()
+                        
+                Case DDU_TEST_STEP, DDU_TEST_STEP_FAILOK, DDU_TEST_STEP_WARNOK
+                
+                    Result = SDProcessTestRecord()
+                
+                Case DDU_BREAKPOINT
+                
+                    if DDU_BREAKPOINTS_ENABLED then
+                        DDU_BREAKPOINTS_MODE = 1
+                        LogMessage "Breakpoint at line "& StepDriverInfo.linecount &" in "& filename, ortd, "", ""
+                    end if
+                
+                'IMPLIED Script? or UNKNOWN RECORD TYPE
+                Case Else
+
+                    Result = DDEImpliedCallScript (.recordType, StepDriverInfo)
+
+            End Select
+            'On Error Goto 0
+        End If  
+        '====== LOGGING would be in a separate (centralized) function\library
+        'status = ostaf.logPassedMessage (otrd.Fac, message, details, oresult)
+        
+        'oResult.result will have the info from SAFSLOGS of whether or not
+        'consolelog and toollog need to be logged to.
+        '==================================================================
+        
+        processRequest = .StatusCode
+        'processRequest = Result
+        
+   End With     
+        Set ostaf = Nothing
+    	  Set oResult = Nothing
+        
+End Function
+
+Sub SDInitLocalVars()
+
+    'On Error Resume Next
+    Dim status
+    Dim copydata
+    
+    On Error Resume Next   
+
+    With otrd
+      If .filename = "" Then
+        Log.Error "Filename not found, attempting to continue"
+      End If
+      If .separator = "" Then .separator = Chr(9)  'Default to a Tab character if no
+      
+      .recordType = GetTrimmedQuotedField(.inputrecord, 1, .separator)
+      
+      If .recordType = "" Then Log.Message "Future logic for implied script call here."
+                     
+      .statuscode = .StatusCode
+      .statusinfo = .StatusInfo
+      .compClass  = ""
+      
+    End With  
+
+    'On Error GoTo 0
+End Sub
+
+'Typically used internally only by SDInitObjectTypeMaps 
+Sub sdProcessClassObjectMap (mappath)
+  Dim fso, stream, textline, sep, cname, cvalue, c1, carray, ccount, ci, citem
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  if fso.FileExists(mappath) then
+    SAFSDebug "StepDriver processing Object Map file "+ mappath, DEBUG_INFO
+    Set stream = fso.OpenTextFile(mappath, 1, false, 0)
+    if stream.AtEndOfStream <> true then
+      if (Not(IsObject(SDObjectsMap))) then Set SDObjectsMap = CreateObject("Scripting.Dictionary")
+      if (Not(IsObject(SDTypesMap))) then Set SDTypesMap = CreateObject("Scripting.Dictionary")
+      Do While stream.AtEndOfStream <> True
+        textline = aqString.Trim(stream.ReadLine)
+        'skip comment lines starting with ' or ; or #
+        if aqString.GetLength(textline) < 1 then
+           'do nothing
+        elseif aqString.GetChar(textline,0) = "#" OR _
+               aqString.GetChar(textline,0) = "'" OR _
+               aqString.GetChar(textline,0) = ";" Then
+               'do nothing
+        else
+           'classname=classtype, altclasstype
+           'ex: WinForm10.Edit.0=EditBox,TextBox    ;exact match
+           'ex: *.Edit.*=EditBox, TextBox           ;Substring/Instr match
+           sep = Instr(textline, "=")
+           if sep > 1 then
+              cname  = aqString.SubString(textline, 0, sep-1)
+              cvalue = aqString.SubString(textline, sep+1, aqString.GetLength(textline)-sep-1)
+              cname  = aqString.Trim(cname)
+              cvalue = aqString.Trim(cvalue)
+              
+              'SDObjectsMap              
+              if SDObjectsMap.Exists(cname) then
+                c1 = SDObjectsMap.Item(cname) +", "+ cvalue
+                SDObjectsMap.Item(cname) = c1
+              else
+                SDObjectsMap.Add cname, cvalue
+              end if
+              
+              'SDTypesMap              
+              'handle multiple types mapping like class=FlexPanel, Panel
+              'cvalue will have "FlexPanel, Panel" and we have to
+              'split those and store them individually like:
+              'FLEXPANEL=class1,class2,class3...  and
+              'PANEL=class1,class2,class3
+              
+              aqString.ListSeparator = ","
+              ccount = aqString.GetListLength(cvalue)
+              For ci = 0 to ccount -1
+                citem = aqString.GetListItem(cvalue, ci)
+                citem = UCASE(aqString.Trim(citem))
+                if SDTypesMap.Exists(citem) then
+                  c1 = SDTypesMap.Item(citem) &","+ cname
+                  SDTypesMap.Item(citem) = c1
+                else
+                  c1 = cname
+                  SDTypesMap.Add citem, cname
+                end if
+                SAFSDebug cvalue &": ["& c1 &"]", DEBUG_INFO
+              Next             
+                            
+           end if
+        end if  
+      Loop
+    else
+      SAFSDebug mappath +" appears to be empty.  Cannot create required ObjectsMap!", DEBUG_ERROR
+      'Log.Message mappath +" appears to be empty.  Cannot create required ObjectsMap!"
+    end if
+    stream.Close
+    Set stream = Nothing
+  else
+    SAFSDebug mappath +" does NOT exist.  Cannot create required ObjectsMap!", DEBUG_ERROR
+    'Log.Message mappath +" does NOT exist.  Cannot create required ObjectsMap!"
+  end if  
+  Set fso = Nothing
+End Sub
+
+
+'Typically used internally only by SDInitObjectTypeMaps 
+Sub sdProcessTypeFunctionMap (mappath)
+  Dim fso, stream, textline, sep, cname, cvalue, c1, carray, ccount, ci, citem
+  Set fso = CreateObject("Scripting.FileSystemObject")
+  if fso.FileExists(mappath) then
+    SAFSDebug "StepDriver processing Function Map file "+ mappath, DEBUG_INFO
+    Set stream = fso.OpenTextFile(mappath, 1, false, 0)
+    if stream.AtEndOfStream <> true then
+      if (Not(IsObject(SDFunctionsMap))) then Set SDFunctionsMap = CreateObject("Scripting.Dictionary")
+      Do While stream.AtEndOfStream <> True
+        textline = aqString.Trim(stream.ReadLine)
+        'skip comment lines starting with ' or ;
+        'skip comment lines starting with ' or ; or #
+        if aqString.GetLength(textline) < 1 then
+           'do nothing
+        elseif aqString.GetChar(textline,0) = "#" OR _
+               aqString.GetChar(textline,0) = "'" OR _
+               aqString.GetChar(textline,0) = ";" Then
+               'do nothing
+        else
+           'type=function library
+           'ex: FormButton=Pushbutton
+           'ex: Pushbutton=Pushbutton
+           'ex: FlexPanel=Generic
+           'ex: Panel=Generic
+           
+           sep = Instr(textline, "=")
+           if sep > 1 then
+              cname  = aqString.SubString(textline, 1, sep-1)
+              cvalue = aqString.SubString(textline, sep+1, aqString.GetLength(textline)-sep-1)
+              cname  = aqString.Trim(cname)
+              cvalue = aqString.Trim(cvalue)
+              
+              'SDObjectsMap              
+              if SDFunctionsMap.Exists(cname) then
+                SDFunctionsMap.Item(cname) = cvalue
+              else
+                SDFunctionsMap.Add cname, cvalue
+              end if
+              
+           end if
+        end if  
+      Loop
+    else
+      SAFSDebug mappath +" appears to be empty.  Cannot create required Function Map!", DEBUG_ERROR
+      'Log.Message mappath +" appears to be empty.  Cannot create required Function Map!"
+    end if
+    stream.Close
+    Set stream = Nothing
+  else
+    SAFSDebug mappath +" does NOT exist.  Cannot create required Function Map!", DEBUG_ERROR
+    'Log.Message mappath +" does NOT exist.  Cannot create required Function Map!"
+  end if  
+  Set fso = Nothing
+End Sub
+
+
+Sub SDInitObjectTypeMaps ()
+  Call sdProcessClassObjectMap(Project.ConfigPath +"CustomClassObjectsMap.dat")
+  Call sdProcessClassObjectMap(Project.ConfigPath +"ClassObjectsMap.dat")
+  Call sdProcessTypeFunctionMap(Project.ConfigPath +"CustomObjectTypesMap.dat")
+  Call sdProcessTypeFunctionMap(Project.ConfigPath +"ObjectTypesMap.dat")  
+End Sub
+
+' returns the native classname of tcobject.
+Function SDGetObjectClassName(tcobject)
+  Dim found, classname, compname, soughclass, sindex, eindex
+
+  On Error Resume Next
+  if NOT aqObject.IsSupported(tcobject, "Name") then
+    compname = "<unavailable>"
+    SAFSDebug "SDGetObjectClassName CANNOT retrieve the component Name property.", DEBUG_INFO
+  else
+    compname = tcobject.Name
+  end if
+
+  if NOT aqObject.IsSupported(tcobject, "WaitProperty") then
+    SAFSDebug "SDGetObjectClassName component cannot use WaitProperty to find any properties...", DEBUG_INFO
+    if aqObject.IsSupported(tcobject, "className") then
+      found = True
+      classname = tcobject.className
+      SAFSDebug "className for '"& compname &"': "& classname, DEBUG_INFO
+    else
+      if aqObject.IsSupported(tcobject, "ClrClassName") then
+        found = True
+        classname = tcobject.ClrClassName
+        SAFSDebug "ClrClassName for '"& compname &"': "& classname, DEBUG_INFO
+      else
+        if aqObject.IsSupported(tcobject, "WndClass") then
+          found = True
+          classname = tcobject.WndClass
+          SAFSDebug "WndClass for '"& compname &"': "& classname, DEBUG_INFO
+        else
+          if aqObject.IsSupported(tcobject, "JavaClassName") then
+            found = True
+            classname = tcobject.JavaClassName
+            SAFSDebug "JavaClassName for '"& compname &"': "& classname, DEBUG_INFO
+          else
+            if aqObject.IsSupported(tcobject, "ClrFullClassName") then
+              found = True
+              classname = tcobject.ClrFullClassName
+              SAFSDebug "ClrFullClassName for '"& compname &"': "& classname, DEBUG_INFO
+            else
+              if aqObject.IsSupported(tcobject, "ObjectType") then
+                found = True
+                classname = tcobject.ObjectType
+                SAFSDebug "ObjectType for '"& compname &"': "& classname, DEBUG_INFO
+              end if
+            end if
+          end if
+        end if
+      end if        
+    end if
+    if not found then
+        classname = ""
+        SAFSDebug "*** Deduced No Classname for '"& compname &"' ***", DEBUG_INFO
+    end if
+    SDGetObjectClassName = classname
+    exit function
+  end if
+     
+  found = False
+  soughtclass = ""
+  
+  'we have found that 'className' might return the same as WndClass in newer TC versions.
+  'however, for .Net apps we prefer the less generic ClrClassName
+  if aqString.Find(compname, "WinFormsObject", 0, False) = -1 then
+      found = tcobject.WaitProperty("className", "?*", 0)
+  else
+      'see if WinFormsObject has the sought classname in it.
+      'if needed in the future, we might consider continuing to check 
+      'all the below properties til we find the one that most matches 
+      'the soughtclass.  This will avoid getting less desirable classNames       
+      if aqString.Find(compname, ",") > 0 then
+          sindex= aqString.Find(compname, "(", 13) +1
+          eindex= aqString.Find(compname, ",", sindex) -1
+          soughtclass = aqString.SubString(compname, sindex, eindex-sindex + 1)
+          soughtclass = aqString.Unquote(soughclass)
+          SAFSDebug "soughtclass for '"& compname &"': "& soughtclass, DEBUG_INFO
+      end if
+  end if
+  
+  if found then
+    classname = tcobject.className
+    SAFSDebug "className for '"& compname &"': "& classname, DEBUG_INFO
+  else
+    found = tcobject.WaitProperty("ClrClassName", "?*", 0)
+    if found then 
+      classname = tcobject.ClrClassName
+      SAFSDebug "ClrClassName for '"& compname &"': "& classname, DEBUG_INFO
+    else  
+      found = tcobject.WaitProperty("WndClass", "?*", 0)
+      if found then 
+        classname = tcobject.WndClass
+        SAFSDebug "WndClass for '"& compname &"': "& classname, DEBUG_INFO
+      else 
+        found = tcobject.WaitProperty("JavaClassName", "?*", 0)
+        if found then 
+          classname = tcobject.JavaClassName
+          SAFSDebug "JavaClassName for '"& compname &"': "& classname, DEBUG_INFO
+        else 
+          found = tcobject.WaitProperty("ClrFullClassName", "?*", 0)
+          if found then 
+            classname = tcobject.ClrFullClassName
+            SAFSDebug "ClrFullClassName for '"& compname &"': "& classname, DEBUG_INFO
+          else
+            found = tcobject.WaitProperty("ObjectType", "?*", 0)  'take ObjectType, it applies to Flex  - Junwu
+            if found then 
+              classname = tcobject.ObjectType
+              SAFSDebug "ObjectType for '"& compname &"': "& classname, DEBUG_INFO
+            end if 
+          end if
+        end if
+      end if
+    end if
+  end if
+  
+  if found then 
+    SDGetObjectClassName = classname
+  else
+    SDGetObjectClassName = ""
+    SAFSDebug "*** Deduced No Classname for '"& compname &"' ***", DEBUG_INFO
+  end if        
+End Function
+
+' returns "" on bad tcobject.
+' returns "Generic" for an unmapped type
+' returns "TYPE_x, TYPE_y..." for mapped classes
+Function SDGetMappedObjectType(tcobject)
+  Dim compname, uccomp, classname, ucclass, found, keys, ki, key, submatch, tempkey
+  Dim ufullname
+
+  On Error Resume Next
+  SDGetMappedObjectType = ""
+  if (Not(IsObject(tcobject))) then exit function
+  if (Not(IsObject(SDObjectsMap))) then exit function
+  if (Not(IsObject(SDFunctionsMap))) then exit function
+  
+  compname = tcobject.Name
+  uccomp = UCase(compname)
+  if aqString.Find(uccomp, "WINDOW(", 0, True) = 0 then
+    'see if FullName contains more than 2 "Window("
+    'sys.Process().Window("...")                --- Top window
+    'sys.Process().Window("...").Window("  ")   --- Component
+    ufullname = UCase(tcobject.FullName)
+    aqString.ListSeparator = "WINDOW("
+    if aqString.GetListLength(ufullname) = 2 then   ' only 1 "Window(" contained in FullName
+      SDGetMappedObjectType = "WINDOW"
+      SAFSDebug "Defaulting '"& compname &"': WINDOW", DEBUG_INFO
+      exit function
+    end if
+  end if
+
+  classname =  SDGetObjectClassName(tcobject)
+  otrd.compclass = classname
+  
+  keys = SDObjectsMap.Keys
+  'First loop to match with the classname
+  SAFSDebug "SDGetMappedObjectType: try to match key with class name:" & classname, DEBUG_DEBUG
+  For ki = 0 to SDObjectsMap.Count -1
+  
+    'check for *something* partial matches  
+    key = keys(ki)
+    submatch = False
+    if aqString.Find(key, "*") > -1 then 
+      submatch = True
+      tempkey = aqString.Replace(key, "*", "")
+    else 
+      tempkey = key
+    end if    
+    'SAFSDebug "SDGetMappedObjectType comparing against class key: "& key &":"& tempkey &", Submatch="& CStr(submatch), DEBUG_INFO
+    'compare the key to the classname
+    'if submatch = true then only a partial substring match is required
+
+    if submatch = True then
+      if aqString.Find(classname, tempkey, 0, False) > -1 Then
+         SDGetMappedObjectType = SDObjectsMap.Item(key)
+         SAFSDebug "SDGetMappedObjectType mapped " & classname +" as '"& SDObjectsMap.Item(key) &"'", DEBUG_INFO
+         exit function
+      end if
+    else
+      if classname = tempkey then 
+         SDGetMappedObjectType = SDObjectsMap.Item(tempkey)
+         SAFSDebug "SDGetMappedObjectType mapped "& classname &" as '"& SDObjectsMap.Item(tempkey) &"'", DEBUG_INFO
+         exit function
+      end if  
+    end if
+  Next
+  
+  'Second loop to match with the TestComplete object's Name
+  SAFSDebug "SDGetMappedObjectType: try to match key with TestComplete object's Name", DEBUG_DEBUG
+  For ki = 0 to SDObjectsMap.Count -1
+    'check for *something* partial matches  
+    key = keys(ki)
+    submatch = False
+    if aqString.Find(key, "*") > -1 then 
+      submatch = True
+      tempkey = aqString.Replace(key, "*", "")
+    else 
+      tempkey = key
+    end if    
+    'SAFSDebug "SDGetMappedObjectType comparing against class key: "& key &":"& tempkey &", Submatch="& CStr(submatch), DEBUG_INFO
+    'compare the key to the compname
+    'if submatch = true then only a partial substring match is required
+    
+    if submatch = True then
+      if aqString.Find(compname, tempkey, 0, False) > -1 then 
+         SDGetMappedObjectType = SDObjectsMap.Item(key)
+         SAFSDebug "SDGetMappedObjectType mapped "& compname & " as '"& SDObjectsMap.Item(key) &"'", DEBUG_INFO
+         exit function
+      end if
+    else
+      if compname = tempkey then
+         SDGetMappedObjectType = SDObjectsMap.Item(tempkey)
+         SAFSDebug "SDGetMappedObjectType mapped "& compname &" as '"& SDObjectsMap.Item(tempkey) &"'", DEBUG_INFO
+         exit function
+      end if  
+    end if
+  Next
+      
+  SAFSDebug "SDGetMappedObjectType returning GENERIC Type mapping for "& compname &":"& classname, DEBUG_INFO
+  SDGetMappedObjectType = "Generic"
+End Function
+
+Function GetCompType(comp) 'compType is tcObject.Name
+  Dim classname, found, ucclass, uccomp
+  Dim ufullname
+  
+  SAFSDebug "StepDriver deducing compType for TC object '"& comp &"'", DEBUG_INFO
+
+  On Error Resume Next
+  uccomp = UCase(comp)
+
+  if aqString.Find(uccomp, "WINDOW(", 0, True) = 0 then
+    'see if FullName contains more than 2 "Window("
+    'sys.Process().Window("...")                --- Top window
+    'sys.Process().Window("...").Window("  ")   --- Component
+    ufullname = UCase(tcobject.FullName)
+    aqString.ListSeparator = "WINDOW("
+    if aqString.GetListLength(ufullname) = 2 then   ' only 1 "Window(" contained in FullName
+      GetCompType = "WINDOW"
+      SAFSDebug "Defaulting '"& comp &"': WINDOW", DEBUG_INFO
+      exit function
+    end if
+  end if
+  
+  classname =  SDGetObjectClassName(otrd.compGUIID)
+
+  ucclass = UCase(classname)
+  IF (InStr(1, ucclass, "COMBOEDIT", 1) <> 0) OR _  
+         (InStr(1, uccomp, "COMBOEDIT", 1) <> 0) Then
+      GetCompType = "COMBOEDITBOX"
+  ElseIf (InStr(1, ucclass, "TEXTAREA", 1) <> 0) OR _
+     (InStr(1, ucclass, "TEXTFIELD", 1) <> 0) OR _
+     (InStr(1, ucclass, "TEXTBOX", 1) <> 0) OR _
+     (InStr(1, ucclass, "EDITBOX", 1) <> 0) OR _
+     (InStr(1, ucclass, ".EDIT.", 1) <> 0) OR _     
+     (InStr(1, uccomp, "TEXTBOX", 1) <> 0) OR _ 
+     (InStr(1, uccomp, "EDITBOX", 1) <> 0) Then     
+      GetCompType = "EDITBOX"
+  ElseIF (InStr(1, ucclass, "CHECKBOX", 1) <> 0) OR _  
+         (InStr(1, uccomp, "CHECKBOX", 1) <> 0) Then
+      GetCompType = "CHECKBOX"
+  ElseIF (InStr(1, ucclass, "COMBOBOX", 1) <> 0) OR _  
+         (InStr(1, ucclass, "COMBOLISTBOX", 1) <> 0) OR _
+         (InStr(1, uccomp, "COMBOBOX", 1) <> 0) OR _
+         (InStr(1, uccomp, "COMBOLISTBOX", 1) <> 0) Then
+      GetCompType = "COMBOBOX" 
+  ElseIF (InStr(1, ucclass, "DATAGRID", 1) <> 0) Then
+      GetCompType = "DATAGRID" 
+  ElseIF InStr(1, uccomp, "HTMLDOCUMENT", 1) <> 0 Then  
+      GetCompType = "HTMLDOCUMENT"
+  ElseIF InStr(1, uccomp, "HTMLIMAGE", 1) <> 0 Then  
+      GetCompType = "HTMLIMAGE"
+  ElseIF InStr(1, uccomp, "HTMLLINK", 1) <> 0 Then  
+      GetCompType = "HTMLLINK"
+  ElseIF InStr(1, uccomp, "HTMLTABLE", 1) <> 0 Then  
+      GetCompType = "HTMLTABLE"
+  ElseIF InStr(1, uccomp, "HTML", 1) <> 0 Then  
+      GetCompType = "HTML"
+  ElseIF InStr(1, uccomp, "JAVAMENU", 1) <> 0 Then  
+      GetCompType = "JAVAMENU"
+  ElseIF InStr(1, uccomp, "JAVAPOPUPMENU", 1) <> 0 Then  
+      GetCompType = "JAVAPOPUPMENU"
+  ElseIF InStr(1, uccomp, "JAVAPOPUPMENU", 1) <> 0 Then  
+      GetCompType = "JAVAPOPUPMENU"
+  ElseIF InStr(1, uccomp, "JAVATABLE", 1) <> 0 Then  
+      GetCompType = "JAVATABLE"
+  ElseIF InStr(1, uccomp, "JAVATREE", 1) <> 0 Then  
+      GetCompType = "JAVATREE"
+  ElseIF (InStr(1, ucclass, "LABEL", 1) <> 0) OR _
+         (InStr(1, uccomp, "LABEL", 1) <> 0) Then  
+      GetCompType = "LABEL"
+  ElseIF (InStr(1, ucclass, "LISTBOX", 1) <> 0) OR _
+         (InStr(1, uccomp, "LISTBOX", 1) <> 0) Then  
+      GetCompType = "LISTBOX"
+  ElseIF (InStr(1, ucclass, "LISTVIEW", 1) <> 0) OR _ 
+         (InStr(1, ucclass, "LIST", 1) <> 0) OR _
+         (InStr(1, uccomp, "LISTVIEW", 1) <> 0) OR _
+         (InStr(1, uccomp, "LIST", 1) <> 0) Then  
+      GetCompType = "LISTVIEW"
+  ElseIF (InStr(1, ucclass, "RADIOBUTTON", 1) <> 0) OR _
+         (InStr(1, uccomp, "RADIOBUTTON", 1) <> 0) Then
+      GetCompType = "RADIOBUTTON" 
+  ElseIF (InStr(1, ucclass, "BUTTON", 1) <> 0) OR _
+         (InStr(1, uccomp, "BUTTON", 1) <> 0) Then
+      GetCompType = "PUSHBUTTON"
+  ElseIF InStr(1, uccomp, "SCROLLBAR", 1) <> 0 Then
+      GetCompType = "SCROLLBAR" 
+  ElseIF (InStr(1, uccomp, "TABCONTROL", 1) <> 0) OR _
+         (InStr(1, ucclass, "TABBAR", 1) <> 0) Then
+      GetCompType = "TABCONTROL" 
+  ElseIF InStr(1, uccomp, "TOOLBAR", 1) <> 0 Then
+      GetCompType = "TOOLBAR" 
+  ElseIF (InStr(1, ucclass, "TREEVIEW", 1) <> 0) OR _
+         (InStr(1, ucclass, "TREE", 1) <> 0) OR _
+         (InStr(1, uccomp, "TREEVIEW", 1) <> 0) OR _
+         (InStr(1, uccomp, "TREE", 1) <> 0) Then
+      GetCompType = "TREEVIEW" 
+  ElseIF (InStr(1, ucclass, "FORM", 1) <> 0) OR _ 
+         (InStr(1, uccomp, "FORM", 1) <> 0) Then  
+      GetCompType = "FORM"
+  ElseIF (InStr(1, ucclass, "GRAPHICCONTROL", 1) <> 0) OR _ 
+         (InStr(1, uccomp, "GRAPHICCONTROL", 1) <> 0) Then  
+      GetCompType = "GRAPHICCONTROL"
+  ElseIF (InStr(1, ucclass, "GROUPBOX", 1) <> 0) OR _ 
+         (InStr(1, uccomp, "GROUPBOX", 1) <> 0) Then  
+      GetCompType = "GROUPBOX"
+  ElseIF InStr(1, uccomp, "WINDOW", 1) <> 0 OR InStr(1, uccomp, "MENU", 1) <> 0 Then
+      GetCompType = "WINDOW" 
+  Else
+      GetCompType = "GENERIC"
+  End If       
+End Function
+
+
+'###################################################################
+'#
+'# Sub SDinitOTRDGUIIDVariables (winname, cmpname)
+'#
+'# DESCRIPTION:
+'#
+'#      According to the winname and cmpname, this function will find the
+'#      'TestComplete window object' and set it to otrd.windowGUIID, and find
+'#      'TestComplete component object' and set it to otrd.compGUIID
+'#
+'#      otrd is TestRecordData COM object passed in from our HOOK loop.
+'#         
+'#  PARAMETERS:
+'#     
+'#      winname  The window name according to which the 'window recognition string'
+'#              can be found in the map file
+'#      cmpname  The component name according to which the 'component recognition string'
+'#              can be found in the map file
+'#     
+'#  RETURNS:
+'#     
+'#      0   success
+'#      -1  window object can't be found
+'#      -2  component object can't be found
+'#      If 'window object' can't be found, then it is sure that 'component object' can't be found,
+'#      so we don't need an other return code to represent 'neither window or component can be found'
+'#
+'# History:
+'#
+'#      NOV 22, 2011    (Lei Wang)    Change this Sub to Function, add comments   
+'###################################################################
+Function SDinitOTRDGUIIDVariables (winname, cmpname)
+    
+  Dim windowObj
+  Dim compObj
+  Dim starttime, idiff, validobj
+  
+  With otrd
+    'Try to find the window object within 'secsWaitForWindow'
+    .windowGUIID = Nothing
+    validobj = False
+    If winname <> "" Then 
+      starttime = Now()
+      idiff = DateDiff("s", starttime, Now())
+          
+      while((Not validobj) and (idiff < SDsecsWaitForWindow))  
+
+          Set windowObj = DDGGetObject(winname,winname)
+          otrd.setWinGUIID(windowObj)
+
+          if TypeName(.windowGUIID) <> "Nothing" then 
+            validobj = True
+          else
+            idiff = DateDiff("s", starttime, Now())
+          end if
+      Wend        
+    Else
+      SAFSDebug .testcommand &": No Window name provided.", DEBUG_ERROR
+    End If
+    
+    'Can' find window object, set return code to -1 and return
+    If TypeName(.windowGUIID) = "Nothing" Then
+        SAFSDebug "Window not found within secsWaitForWindow "& SDsecsWaitForWindow , DEBUG_ERROR
+        SDinitOTRDGUIIDVariables = -1
+        Exit Function
+    End If  
+    
+    'component is same as window, set window object to 'compGUIID' of otrd
+    'set the return code to 0 and return
+    If winname = cmpname Then
+        otrd.setCompGUIID(windowObj)
+        SDinitOTRDGUIIDVariables = 0
+    Else
+        'Try to find the component object within 'secsWaitForComponent'    
+        .compGUIID = Nothing
+        validobj = False
+        If cmpname <> "" Then
+          starttime = Now()
+          idiff = DateDiff("s", starttime, Now())
+      
+          while((Not validobj) and (idiff < SDsecsWaitForComponent))
+
+            Set compObj = DDGGetObject(winname,cmpname)
+                otrd.setCompGUIID(compObj)
+
+            If TypeName(.compGUIID) <> "Nothing" Then 
+              validobj = True
+            Else
+              idiff = DateDiff("s", starttime, Now())
+            End If
+          Wend
+        Else
+          SAFSDebug .testcommand &": No Component name provided", DEBUG_ERROR
+        End If
+
+        'Can' find component object, set return code to -2 and return
+        If TypeName(.compGUIID) = "Nothing" Then      
+            SAFSDebug "Component not found within secsWaitForComponent "& SDsecsWaitForComponent , DEBUG_ERROR
+            SDinitOTRDGUIIDVariables = -2        
+        'Find component object, set the return code to 0 and return  
+        Else
+            SDinitOTRDGUIIDVariables = 0
+        End If
+    End If
+
+    'Highlights the Test Object if the global variable highLightComponent is True  
+    If highLightComponent And SDinitOTRDGUIIDVariables=0 Then
+        HighLight .compGUIID, 2, RED  
+    End If
+    
+  End With
+End Function
+
+Function SDProcessEngineRecord()
+    With otrd
+        SAFSDebug "StepDriver checking EngineCommands record...", DEBUG_INFO
+        On Error Resume next
+        otrd.setTestCommand(GetTrimmedQuotedField(.inputrecord, 2, .separator)) 
+        if ((TypeName(.testcommand) = "Nothing") or (.testcommand = "")) then
+            Log.Message "No valid Engine Command found."
+            .StatusCode = SDGeneralScriptWarning
+            LogMessage "Invalid or missing Engine Command in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+            exit function
+        end if
+        SDProcessEngineRecord = ECEngineCommands()
+    End With
+End Function
+
+Function SDProcessTestRecord()
+    Dim uctemp, temptype
+    With otrd
+      On Error Resume next
+        .windowname = GetTrimmedQuotedField(.inputrecord, 2, .separator)
+        .compname = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+        otrd.setTestCommand(GetTrimmedQuotedField(.inputrecord, 4, .separator)) 
+        if ((TypeName(.testcommand) = "Nothing") or (.testcommand = "")) then
+            Log.Message "No component function action command found."
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Invalid or missing component function command in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+            exit function
+        end if
+        
+        if(StrComp(.testcommand, GENERIC_GUI_DOES_EXIST, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_GUI_DOES_NOT_EXIST, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_BINARY_FILE_TO_FILE, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_FILE_TO_FILE, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_TEXT_FILE_TO_FILE, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_VALUE_CONTAINS, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_VALUE_CONTAINS_IGNORECASE, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_VALUES, 1) = 0) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_VALUES_IGNORECASE, 1) = 0 ) OR _
+          (StrComp(.testcommand, GENERIC_VERIFY_CLIPBOARD_TO_FILE_COMMAND, 1) = 0) then
+          'skip TC object Eval for above commands
+          'handle in individual keyword implementations
+          .compType = "GENERIC"
+          .environment = DDU_UNKNOWN_ENVIRONMENT  
+          SAFSDebug "StepDriver skipping initial object validation for command: "& .testcommand, DEBUG_INFO
+       
+        ELSE
+          Dim initOtrdGuiRC
+          initOtrdGuiRC = SDinitOTRDGUIIDVariables(.windowname, .compname)
+          'check that we actually got our window and component objects
+          SAFSDebug "windowGUIID found to be: "& TypeName(.windowGUIID), DEBUG_INFO
+          SAFSDebug "compGUIID found to be: "& TypeName(.compGUIID), DEBUG_INFO
+        
+          if initOtrdGuiRC = -1 or TypeName(.windowGUIID) = "Object" then
+              Log.Error .testcommand &" "& .windowname & _
+                 " Object not found within secsWaitForWindow "& _
+                 SDsecsWaitForWindow &" timeout period."
+              .StatusCode = SDGeneralScriptFailure
+              LogMessage .windowname &" Object not found within secsWaitForWindow "& _
+              SDsecsWaitForWindow &" timeout period in table "& _
+                         .FileName &" at line "& .LineNumber, _
+                             FAILED_MESSAGE, .InputRecord
+              exit function
+          elseif initOtrdGuiRC = -2 or TypeName(.compGUIID) = "Object" then
+              Log.Error .testcommand &" "& .compname & _
+                  " Object not found within secsWaitForComponent "& _
+                  SDsecsWaitForComponent &" timeout period."
+              .StatusCode = SDGeneralScriptFailure
+              LogMessage .compname &" Object not found within secsWaitForComponent "& _
+                  SDsecsWaitForComponent &" timeout period in table "& _
+                         .FileName &" at line "& .LineNumber, _
+                             FAILED_MESSAGE, .InputRecord
+              exit function
+          end if
+
+          'window and component objects ARE valid
+
+          'Try to set the component type
+          if ((StrComp(.testcommand, SDSELECT_POPUP_MENUITEM_COMMAND, 1) = 0) OR _
+                    (StrComp(.testcommand, SDSELECT_POPUP_MENUID_COMMAND, 1) = 0) OR _
+                    (StrComp(.testcommand, SDVERIFY_POPUP_MENUITEM_COMMAND, 1) = 0) OR _
+                    (StrComp(.testcommand, SDVERIFY_POPUP_MENUID_COMMAND, 1) = 0) OR _
+                    (StrComp(.testcommand, SDSELECT_UNVERIFIED_POPUP_MENUITEM_COMMAND, 1) = 0) OR _
+                    (StrComp(.testcommand, SDVERIFY_POPUP_MENU_COMMAND, 1) = 0)) then
+             .comptype = "POPUPMENU" 
+             '.environment = DDU_UNKNOWN_ENVIRONMENT
+          Else
+              'try the new mapfile way
+              .compType = SDGetMappedObjectType(.compGUIID)
+              if aqString.GetLength(.compType) > 1 then
+                SAFSDebug "SDProcessTestRecord found externally mapped compType: "& .compType , DEBUG_INFO
+              else
+                SAFSDebug "SDProcessTestRecord reverting to embedded mappings for compType...", DEBUG_INFO
+                .compType = GetCompType(.compGUIID.name)
+              end if
+
+          end if
+          
+          'Try to set the environment
+          .environment = DDGGetEnvironmentFromTestObject(.compGUIID)
+          if aqString.GetLength(.environment) > 1 then
+              SAFSDebug "SDProcessTestRecord found TestObject Domain to be: "& .environment, DEBUG_INFO
+          else
+              SAFSDebug "SDProcessTestRecord did not deduce the TestObject Domain successfully...", DEBUG_INFO
+          end if
+        end if
+        
+        SAFSDebug "StepDriver processing compType: "& .compType &" for compClass: "& .compClass, DEBUG_INFO
+      'On Error Goto 0
+    End With
+    
+    Select Case UCase(otrd.comptype)
+    
+    Case "EDITBOX"
+    
+      EditBoxMain
+                                                                             
+    Case "CHECKBOX"
+    
+      CheckBoxMain
+      
+    Case "COMBOBOX"
+      
+      ComboBoxMain
+      
+    Case "COMBOEDITBOX"
+  
+      ComboEditBoxMain  
+      
+    Case "COMBOLISTBOX"
+  
+       ComboListBoxMain
+      
+    Case "GRAPHICCONTROL"
+    
+      GraphicControlMain  
+  
+    Case "GROUPBOX"
+  
+      GroupBoxMain
+  
+    Case "HTMLDOCUMENT"
+  
+      HTMLDocumentMain 
+  
+    Case "HTMLIMAGE"
+  
+      HTMLImageMain
+  
+    Case "HTMLLINK"
+  
+      HTMLLinkMain 
+  
+    Case "HTMLTABLE"
+  
+      HTMLTableMain 
+  
+    Case "HTML"
+  
+      HTMLMain 
+  
+    Case "LABEL"
+  
+      LabelMain
+  
+    Case "LISTBOX"
+       
+      ListViewMain 'ListBoxMain --Junwu put ListBox into the same branch as ListView
+  
+    Case "LISTVIEW"
+  
+      ListViewMain
+      
+    Case "POPUPMENU"
+
+          PopupMenuMain
+      
+    Case "PUSHBUTTON"
+    
+      PushButtonMain
+      
+    Case "RADIOBUTTON"
+  
+      RadioButtonMain 
+   
+    Case "SCROLLBAR"
+  
+      ScrollBarMain
+  
+    Case "TABCONTROL"
+  
+      TabControlMain 
+  
+    Case "TOOLBAR"
+  
+      ToolBarMain  
+      
+    Case "TREEVIEW" 
+           
+      TreeViewMain  
+                             
+    Case "WINDOW"
+        
+      WindowsMain
+      
+    Case "CONTEXTMENU"
+        
+      WindowsMain  
+    
+    Case "MENUBAR"
+          Select Case otrd.environment          
+             Case DDU_FLEX_ENVIRONMENT
+                  FlexMenuBarMain                         
+             Case Else                            
+                  WindowsMain                           
+          End Select        
+    Case "FORM"
+  
+      WindowsMain
+      
+    Case "JAVAMENU"
+      PopupMenuMain
+    Case "JAVAPOPUPMENU"
+      PopupMenuMain
+    Case "JAVATABLE"
+      DataGridMain
+    Case "DATAGRID"
+      DataGridMain
+    Case "JAVATREE"
+      TreeViewMain
+    Case Else
+      'Change from HandleGenericCommand to WindowsMain to ensure unmapped topwindow can accept keywords in WindowFunctions. (JunwuMa)
+	    WindowsMain  
+    
+    End Select
+ 
+End Function

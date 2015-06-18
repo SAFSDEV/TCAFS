@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE Nodes [
+
+<!ENTITY % NameValue "CDATA">
+<!ENTITY % PropType "(I|S|D|L|H|B)">
+<!ENTITY % VersionValue "CDATA">
+
+<!ELEMENT Prp (#PCDATA)>
+<!ELEMENT Node (Node|Prp)*>
+<!ELEMENT Nodes (Node)+>
+
+<!ATTLIST Nodes version CDATA "1">
+
+<!ATTLIST Node name CDATA #REQUIRED>
+
+<!ATTLIST Prp name CDATA #REQUIRED>
+<!ATTLIST Prp type CDATA #REQUIRED>
+<!ATTLIST Prp value CDATA #REQUIRED>
+]>
+<Nodes version="1">
+	<Node name="root">
+		<Node name="child list">
+			<Node name="item0000000000">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="Regions.tcRegions"/>
+				</Node>
+				<Prp name="index" type="I" value="0"/>
+				<Prp name="key" type="S" value="{35067DCE-A3CC-4BE3-975D-8AF1AF60C4F6}"/>
+				<Prp name="pluginname" type="S" value="Stores"/>
+				<Prp name="type" type="S" value="{DA6D7EF7-5B05-4735-AAF0-A85E47D47989}"/>
+				<Prp name="typename" type="S" value="Regions"/>
+			</Node>
+			<Node name="item0000000001">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="Files.tcFiles"/>
+				</Node>
+				<Prp name="index" type="I" value="1"/>
+				<Prp name="key" type="S" value="{66625409-415E-4F45-A1AC-219D7C0D3177}"/>
+				<Prp name="pluginname" type="S" value="Stores"/>
+				<Prp name="type" type="S" value="{AA2F3067-5C9B-4CCF-89D4-1F93CE1C510F}"/>
+				<Prp name="typename" type="S" value="Files"/>
+			</Node>
+			<Node name="item0000000002">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="Objects.tcObjects"/>
+				</Node>
+				<Prp name="index" type="I" value="2"/>
+				<Prp name="key" type="S" value="{E6B595F2-2433-40EC-B4AA-50147C9FD4E4}"/>
+				<Prp name="pluginname" type="S" value="Stores"/>
+				<Prp name="type" type="S" value="{30501691-969F-4007-923F-BA4459E51E6A}"/>
+				<Prp name="typename" type="S" value="Objects"/>
+			</Node>
+			<Node name="item0000000003">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="DBTables\DBTables.tcDB"/>
+				</Node>
+				<Prp name="index" type="I" value="3"/>
+				<Prp name="key" type="S" value="{66948788-C66B-4B2A-A8DA-C889C289C802}"/>
+				<Prp name="pluginname" type="S" value="Stores"/>
+				<Prp name="type" type="S" value="{C3BE8E0F-FB1F-487B-9AE3-BCFEB91CBEFF}"/>
+				<Prp name="typename" type="S" value="DB tables"/>
+			</Node>
+			<Node name="item0000000004">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="Tables\Tables.tcTbls"/>
+				</Node>
+				<Prp name="index" type="I" value="4"/>
+				<Prp name="key" type="S" value="{14CEB1B6-86C3-4BAE-9CF5-C678862FD29E}"/>
+				<Prp name="pluginname" type="S" value="Stores"/>
+				<Prp name="type" type="S" value="{70FC6ED0-A122-4A26-9B64-EDDBB2F11A49}"/>
+				<Prp name="typename" type="S" value="Tables"/>
+			</Node>
+			<Node name="item0000000005">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="XML\XML.tcXmls"/>
+				</Node>
+				<Prp name="index" type="I" value="5"/>
+				<Prp name="key" type="S" value="{12EF2074-9434-4E39-A4BD-E995BD0A3230}"/>
+				<Prp name="pluginname" type="S" value="Stores"/>
+				<Prp name="type" type="S" value="{CCCFA5F5-AB3B-408F-95C9-61DE90C5FAD5}"/>
+				<Prp name="typename" type="S" value="XML"/>
+			</Node>
+			<Node name="item0000000006">
+				<Node name="item data">
+					<Prp name="relpath" type="S" value="WebTesting\WebTesting.tcWtc"/>
+				</Node>
+				<Prp name="index" type="I" value="6"/>
+				<Prp name="key" type="S" value="{547C9C17-B6AD-4164-A42F-1CBC981DC976}"/>
+				<Prp name="pluginname" type="S" value="Web Checkpoints"/>
+				<Prp name="type" type="S" value="{B205BEB2-E15D-463E-8F95-9AF50A3E8F46}"/>
+				<Prp name="typename" type="S" value="Web Testing"/>
+			</Node>
+		</Node>
+		<Node name="folders">
+			<Node name="folders"/>
+		</Node>
+		<Node name="settings">
+			<Prp name="settingsversion" type="S" value="9.10"/>
+		</Node>
+		<Prp name="signature" type="S" value="{5238AF17-5FE2-48FF-8BCC-9803A975A4F4}"/>
+		<Prp name="version" type="S" value="9.0"/>
+	</Node>
+</Nodes>

@@ -1,0 +1,479 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    EngineCommands.SVB  Library
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to support SAFS EngineCommands for  
+'#      Data-Driven Automation.
+'#
+'#      This TestComplete EngineCommands Processor will write and persist 
+'#      global SAFSVARS variable values of the most recent (last) engine command executed:
+'#
+'#          TCAFS.Command = [command]
+'#          TCAFS.StatusCode = [statuscode string]
+'#          TCAFS.StatusInfo = [statusinfo]
+'#          TCAFS.FullName = [object.FullName] -- the objects FullName recognition string
+'#          TCAFS.UID.Count = [Number of UID References created last]
+'#          TCAFS.UID.1 = [First UID Reference created]
+'#          TCAFS.UID.n = [UID Reference number n]
+'#
+'#      These can be referenced in SAFS tests as normal SAFS Variables:
+'#
+'#          ^TCAFS.Command
+'#          ^TCAFS.StatusCode
+'#          ^TCAFS.StatusInfo
+'#          ^TCAFS.FullName
+'#          ^TCAFS.UID.Count
+'#          ^TCAFS.UID.1
+'#          ^TCAFS.UID.n
+'#
+'#      These variables will retain these values until the execution of another Engine 
+'#      command by the EngineCommands processor.  So, they can be parsed and manipulated 
+'#      by DriverCommands and other processors until they are reset or changed by 
+'#      another Engine Command.
+'#
+'#  
+'# Orig Author: Carl Nagle
+'# Orig   Date: JUN 28, 2013
+'# History:
+'#
+'#      JUN 28, 2013    Original Release
+'#      JUL 15, 2013    Carl Nagle Adding commands
+'#
+'##############################################################################
+
+' Valid TESTCOMMANDS 
+Const ECCLEAR_HIGHLIGHTED_DIALOG                = "CLEARHIGHLIGHTEDDIALOG"
+Const ECCLEAR_REFERENCE_CACHE                   = "CLEARREFERENCECACHE"
+Const ECENABLE_DOMAINS                          = "ENABLEDOMAINS"
+Const ECGET_ACCESSIBLE_NAME                     = "GETACCESSIBLENAME"
+Const ECGET_CAPTION                             = "GETCAPTION"
+Const ECGET_CHILD_COUNT                         = "GETCHILDCOUNT"
+Const ECGET_CHILDREN                            = "GETCHILDREN"
+Const ECGET_CLASSINDEX                          = "GETCLASSINDEX" 
+Const ECGET_CLASSNAME                           = "GETCLASSNAME"
+Const ECGET_COMPONENT_RECTANGLE                 = "GETCOMPONENTRECTANGLE"
+Const ECGET_CURRENTWINDOW                       = "GETCURRENTWINDOW"
+Const ECGET_ID                                  = "GETID"
+Const ECGET_LEVEL                               = "GETLEVEL"
+Const ECGET_MATCHING_KEYS_AT_POINT              = "GETMATCHINGKEYSATPOINT"
+Const ECGET_MATCHING_CHILD_OBJECTS              = "GETMATCHINGCHILDOBJECTS"
+Const ECGET_MATCHING_PARENT_OBJECT              = "GETMATCHINGPARENTOBJECT"
+Const ECGET_MATCHING_PATH_OBJECT                = "GETMATCHINGPATHOBJECT"
+Const ECGET_NAME                                = "GETNAME"
+Const ECGET_NON_ACCESSIBLE_NAME                 = "GETNONACCESSIBLENAME"
+Const ECGET_PROPERTY                            = "GETPROPERTY"
+Const ECGET_PROPERTY_NAMES                      = "GETPROPERTYNAMES"
+Const ECGET_SUPER_CLASSNAMES                    = "GETSUPERCLASSNAMES"
+Const ECGET_TEXT                                = "GETTEXT"
+Const ECGET_TOPLEVEL_COUNT                      = "GETTOPLEVELCOUNT"
+Const ECGET_TOPLEVEL_WINDOWS                    = "GETTOPLEVELWINDOWS"
+Const ECGET_TOP_WINDOW_HANDLE                   = "GETTOPWINDOWHANDLE"
+Const ECHIGHLIGHT_MATCHING_CHILD_OBJECT         = "HIGHLIGHTMATCHINGCHILDOBJECT"
+Const ECHIGHLIGHT_MATCHING_CHILD_OBJECT_BY_KEY  = "HIGHLIGHTMATCHINGCHILDOBJECTBYKEY"
+Const ECIS_ENABLED                              = "ISENABLED"
+Const ECIS_MATCHING_PATH                        = "ISMATCHINGPATH"
+Const ECIS_SHOWING                              = "ISSHOWING"
+Const ECIS_TOPLEVEL_POPUP_CONTAINER             = "ISTOPLEVELPOPUPCONTAINER"
+Const ECIS_VALID                                = "ISVALID"
+Const ECSET_ACTIVE_WINDOW                       = "SETACTIVEWINDOW"
+
+'EngineCommand Global SAFSVARS
+Const EC_VAR_COMMAND    = "TCAFS.Command"  
+Const EC_VAR_STATUSCODE = "TCAFS.StatusCode"  
+Const EC_VAR_STATUSINFO = "TCAFS.StatusInfo"
+Const EC_VAR_FULLNAME   = "TCAFS.FullName"
+Const EC_VAR_UID_PREFIX = "TCAFS.UID."       'prefix for TCAFS.UID.1-n
+Const EC_VAR_UID_COUNT  = "TCAFS.UID.Count"
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT LogUtilities_X
+'USEUNIT ApplicationUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT DDGUIUtilities_X
+'USEUNIT StepDriver_X
+'USEUNIT LogUtilities
+'USEUNIT StringUtilities
+'USEUNIT DDVariableStore 
+'USEUNIT FileUtilities
+'USEUNIT DDUtilities
+'USEUNIT DDGUIUtilities
+'USEUNIT StepDriver
+
+'# FORWARD DECLARATIONS
+
+Dim ECObjectsMap
+
+Function ECInitECObjectsMap ()
+    On Error Resume Next
+    If Not IsObject(ECObjectsMap) Or ECObjectsMap Is Nothing Then
+        SAFSDebug "First time initialization of EngineCommands Object Map...", DEBUG_INFO
+        Set ECObjectsMap = CreateObject("Scripting.Dictionary")
+    else
+        SAFSDebug "Using existing EngineCommands Object Map containing "& ECObjectsMap.Count &" entries.", DEBUG_INFO
+    End IF
+    Set ECInitECObjectsMap = ECObjectsMap
+End Function
+
+Sub ECClearECObjectsMap
+    On Error Resume Next
+    if IsObject(ECObjectsMap) then
+        SAFSDebug "Clearing all references in EngineCommands Object Map...", DEBUG_INFO
+        ECObjectsMap.RemoveAll
+    else
+        SAFSDebug "Clearing EngineCommands Object Map aborted: Map not initialized.", DEBUG_INFO
+    End if
+End Sub
+
+'returns a valid Object or Nothing
+Function ECGetMappedObject(ref)
+    Dim store, obj
+    On Error Resume Next
+    if ref="" then
+        Set ECGetMappedObject = Nothing
+    else
+        Set store = ECInitECObjectsMap()
+        if store.Exists(ref) then
+            Set obj = store.Item(ref)
+            SAFSDebug "Retrieved obj '"& obj.FullName &"' using ref '"& ref &"' in EngineCommands Object Map.", DEBUG_INFO
+            Set ECGetMappedObject = obj
+            Set obj = Nothing
+        else
+            SAFSDebug "Reference "& ref &" did not exist in EngineCommands Object Map.", DEBUG_INFO
+            Set ECGetMappedObject = Nothing            
+        End If
+        Set store = Nothing
+    end if
+End Function
+
+Function ECSetMappedObject(ref, obj)
+    Dim store
+    On Error Resume Next
+    if ref="" then
+        Set ECSetMappedObject = Nothing
+    elseif Not IsObject(obj) or obj is Nothing then
+        Set ECSetMappedObject = Nothing            
+    else
+        Set store = ECInitECObjectsMap()
+        if store.Exists(ref) then
+            SAFSDebug "Replacing reference '"& ref &"' for object '"& obj.FullName &"' in EngineCommands Object Map.", DEBUG_INFO
+            store.Item(ref) = obj
+        else
+            SAFSDebug "Adding reference'"& ref &"' for object '"& obj.FullName &"' in EngineCommands Object Map.", DEBUG_INFO
+            store.Add ref, obj
+        End If
+        Set ECSetMappedObject = obj            
+        Set store = Nothing
+    end if
+End Function
+
+Function ECGenUniqueId()
+    Dim id,tl
+    ON Error Resume Next
+    Set tl = CreateObject("Scriptlet.TypeLib")
+    id = Mid(CStr(tl.Guid), 2, 36)
+    ECGenUniqueId = aqString.Replace(id, "-", "x") 
+    Set tl = Nothing
+End Function
+
+' ###############################################
+' Main Entry Point for Engine Command Processing
+' ###############################################
+Function ECEngineCommands()
+
+    With otrd
+        On Error Resume Next
+        SAFSDebug "EngineCommands processing "& .testcommand &"...", DEBUG_INFO
+        .StatusCode = SDScriptNotExecuted
+        .StatusInfo = ""
+ 
+        DDVSetVariableValue EC_VAR_COMMAND, .testcommand
+        DDVSetVariableValue EC_VAR_STATUSCODE, .StatusCode
+        DDVSetVariableValue EC_VAR_STATUSINFO, .StatusInfo        
+        DDVSetVariableValue EC_VAR_FULLNAME, "" 'recognition strings will contain quotes and commas!        
+        
+        Select Case UCase(.testcommand)        
+        
+            Case ECGET_CURRENTWINDOW               
+                ECGetCurrentWindow()
+            Case ECCLEAR_REFERENCE_CACHE
+                ECClearReferenceCache()
+            Case ECIS_SHOWING
+                ECIsShowing()
+            Case ECIS_ENABLED
+                ECIsEnabled()
+            Case ECIS_VALID
+                ECIsValid()
+            Case ECSET_ACTIVE_WINDOW
+                ECSetActiveWindow()
+            Case ECIS_TOPLEVEL_POPUP_CONTAINER
+                ECIsTopLevelPopupContainer()
+            Case ECGET_TOPLEVEL_COUNT
+                ECGetTopLevelCount()
+            Case ECGET_TOPLEVEL_WINDOWS
+                ECGetTopLevelWindows()
+            Case Else
+                SAFSDebug "Unimplemented EngineCommand '"& .testcommand &"'...", DEBUG_INFO
+                .StatusCode = SDGeneralScriptFailure
+                LogMessage "Unimplemented EngineCommand '"& .testcommand &"'...", _
+                       FAILED_MESSAGE, ""
+        End Select
+        DDVSetVariableValue EC_VAR_COMMAND, .testcommand
+        DDVSetVariableValue EC_VAR_STATUSCODE, .StatusCode
+        DDVSetVariableValue EC_VAR_STATUSINFO, .StatusInfo        
+        ECEngineCommands = .StatusCode
+    End With
+
+End Function
+
+Function ECIsTopLevelPopupContainer()
+    Dim tempstring, obj
+    With otrd
+    On Error Resume Next
+        tempstring = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+        if tempstring="" then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Missing required COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                       FAILED_MESSAGE, .InputRecord
+            ECIsTopLevelPopupContainer = .StatusCode
+            exit function
+        end if
+        Set obj = ECGetMappedObject(tempstring)             
+        if Not IsObject(obj) or obj is Nothing then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Invalid COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                        FAILED_MESSAGE, .InputRecord
+        else                         
+            .statuscode = SDNoScriptFailure
+            .StatusInfo = DDGIsTopLevelPopupContainer(obj)
+            LogMessage .testcommand &" returned "& .StatusInfo &" for "& obj.FullName, _
+            GENERIC_MESSAGE, ""
+            tempstring = aqstring.Replace(obj.FullName, """", "\""")
+            DDVSetVariableValue EC_VAR_FULLNAME, tempstring        
+        end if
+        ECIsTopLevelPopupContainer = .StatusCode
+    End With
+End Function
+
+Function ECSetActiveWindow()
+    Dim tempstring, obj
+    With otrd
+    On Error Resume Next
+        tempstring = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+        if tempstring="" then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Missing required COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                       FAILED_MESSAGE, .InputRecord
+            ECSetActiveWindow = .StatusCode
+            exit function
+        end if
+        Set obj = ECGetMappedObject(tempstring)             
+        if Not IsObject(obj) or obj is Nothing then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Invalid COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                        FAILED_MESSAGE, .InputRecord
+        else                         
+            .statuscode = SDNoScriptFailure
+            obj.Activate
+            LogMessage .testcommand &" invoked on "& obj.FullName, _
+            GENERIC_MESSAGE, ""
+            tempstring = aqstring.Replace(obj.FullName, """", "\""")
+            DDVSetVariableValue EC_VAR_FULLNAME, tempstring        
+        end if
+        ECSetActiveWindow = .StatusCode
+    End With
+End Function
+
+Function ECIsValid()
+    Dim tempstring, obj
+    With otrd
+    On Error Resume Next
+        tempstring = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+        if tempstring="" then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Missing required COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                       FAILED_MESSAGE, .InputRecord
+            ECIsValid = .StatusCode
+            exit function
+        end if
+        Set obj = ECGetMappedObject(tempstring)             
+        if Not IsObject(obj) or obj is Nothing then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Invalid COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                        FAILED_MESSAGE, .InputRecord
+        else                         
+            .statuscode = SDNoScriptFailure
+            .StatusInfo = CStr(obj.Exists)
+            LogMessage .testcommand &" returned "& .StatusInfo &" for "& obj.FullName, _
+            GENERIC_MESSAGE, ""
+            tempstring = aqstring.Replace(obj.FullName, """", "\""")
+            DDVSetVariableValue EC_VAR_FULLNAME, tempstring        
+        end if
+        ECIsValid = .StatusCode
+    End With
+End Function
+
+Function ECIsEnabled()
+    Dim tempstring, obj
+    With otrd
+    On Error Resume Next
+        tempstring = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+        if tempstring="" then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Missing required COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                       FAILED_MESSAGE, .InputRecord
+            ECIsEnabled = .StatusCode
+            exit function
+        end if
+        Set obj = ECGetMappedObject(tempstring)             
+        if Not IsObject(obj) or obj is Nothing then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Invalid COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                        FAILED_MESSAGE, .InputRecord
+        else                         
+            .statuscode = SDNoScriptFailure
+            .StatusInfo = CStr(obj.Enabled)
+            LogMessage .testcommand &" returned "& .StatusInfo &" for "& obj.FullName, _
+            GENERIC_MESSAGE, ""
+            tempstring = aqstring.Replace(obj.FullName, """", "\""")
+            DDVSetVariableValue EC_VAR_FULLNAME, tempstring        
+        end if
+        ECIsEnabled = .StatusCode
+    End With
+End Function
+
+Function ECIsShowing()
+    Dim tempstring, obj
+    With otrd
+    On Error Resume Next
+        tempstring = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+        if tempstring="" then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Missing required COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                       FAILED_MESSAGE, .InputRecord
+            ECIsShowing = .StatusCode
+            exit function
+        end if
+        Set obj = ECGetMappedObject(tempstring)             
+        if Not IsObject(obj) or obj is Nothing then
+            .StatusCode = SDGeneralScriptFailure
+            LogMessage "Invalid COMPONENT parameter in table " & _
+                        .FileName & " at line " & .LineNumber, _
+                        FAILED_MESSAGE, .InputRecord
+        else                         
+            .statuscode = SDNoScriptFailure
+            .StatusInfo = CStr(obj.VisibleOnScreen)
+            LogMessage .testcommand &" returned "& .StatusInfo &" for "& obj.FullName, _
+            GENERIC_MESSAGE, ""
+            tempstring = aqstring.Replace(obj.FullName, """", "\""")
+            DDVSetVariableValue EC_VAR_FULLNAME, tempstring        
+        end if
+        ECIsShowing = .StatusCode
+    End With
+End Function
+
+Function ECGetTopLevelCount()
+    Dim c
+    With otrd
+        On Error Resume Next
+        c = DDGGetTopLevelWindows()
+        if IsArray(c) then        
+            .StatusInfo = CStr(UBound(c)+ 1)          
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand &" found "& .StatusInfo &" toplevel windows.", GENERIC_MESSAGE, ""
+        else
+            .StatusCode = SDGeneralScriptFailure
+            .StatusInfo = ""
+            LogMessage .testcommand &" failed to locate any toplevel Windows in table " & _
+                    .FileName & " at line " & .LineNumber, _
+                    FAILED_MESSAGE, ""
+        end if
+        c = Nothing
+        ECGetTopLevelCount = .StatusCode
+    End With
+End Function
+
+Function ECGetTopLevelWindows()
+    Dim a, i, w, s, id
+    With otrd
+        On Error Resume Next
+        a = DDGGetTopLevelWindows()
+        if IsArray(a) then
+            if .separator = ";" then
+                s = ","
+            else
+                s = ";"
+            end if
+            For i=0 to UBound(a) 
+                w = a(i)
+                id = ECGenUniqueId()
+                .StatusInfo = .StatusInfo & s & id          
+                ECSetMappedObject id, w 
+               DDVSetVariableValue EC_VAR_UID_PREFIX & CStr(i+1), id                
+            Next        
+            DDVSetVariableValue EC_VAR_UID_COUNT, CStr(i)   'i is already at +1                
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand &" found ^TCAFS.UID.Count="& i &" toplevel windows.", GENERIC_MESSAGE, ""
+        else
+            DDVSetVariableValue EC_VAR_UID_COUNT, "0"                
+            .StatusCode = SDGeneralScriptFailure
+            .StatusInfo = ""
+            LogMessage .testcommand &" failed to locate any toplevel Windows in table " & _
+                    .FileName & " at line " & .LineNumber, _
+                    FAILED_MESSAGE, ""
+        end if
+        a = Nothing        
+        ECGetTopLevelWindows = .StatusCode
+    End With
+End Function
+
+Function ECGetCurrentWindow()
+    Dim win, tl
+    With otrd
+        On Error Resume Next
+        Set win =  DDGGetObjectByRec(TYPE_CURRENTWINDOW, TYPE_CURRENTWINDOW)
+        If Not IsObject(win) Or win Is Nothing Then
+            DDVSetVariableValue EC_VAR_UID_COUNT, "0"
+            .StatusCode = SDGeneralScriptFailure
+            .StatusInfo = ""
+            LogMessage "GetCurrentWindow failed to locate the toplevel Window in table " & _
+                    .FileName & " at line " & .LineNumber, _
+                    FAILED_MESSAGE, ""
+            Exit Function
+        End If
+        .StatusInfo = ECGenUniqueId()          
+        .StatusCode = SDNoScriptFailure
+        LogMessage "GetCurrentWindow found ^TCAFS.UID.1 as "& win.FullName, GENERIC_MESSAGE, ""
+        ECSetMappedObject .StatusInfo, win 
+        DDVSetVariableValue EC_VAR_UID_COUNT, "1"
+        DDVSetVariableValue EC_VAR_UID_PREFIX &"1", .StatusInfo
+        tl = aqstring.Replace(win.FullName, """", "\""")
+        DDVSetVariableValue EC_VAR_FULLNAME, tl        
+        Set win = Nothing
+        ECGetCurrentWindow = .StatusCode
+    End With
+End Function
+
+Function ECClearReferenceCache()
+    On Error Resume Next
+    With otrd
+        ECClearECObjectsMap
+        .StatusCode = SDNoScriptFailure
+        .StatusInfo = ""
+        LogMessage "ClearReferenceCache  completed.", GENERIC_MESSAGE, ""
+        DDVClearArrayVariable EC_VAR_UID_PREFIX
+        ECClearReferenceCache = .StatusCode
+    End With    
+End Function

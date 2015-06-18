@@ -1,0 +1,2699 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    DataGrid.SVB  Library
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on Type=DataGrid objects in 
+'#      Data-Driven Automation.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#      ActivateCell            'Double Click on a cell
+'#      ClickCell               'Click on a cell
+'#      DoubleClickCell         'Double Click on a cell
+'#      RightClickCell          'Right Click on a cell
+'#      SelectCell              'Click on a cell
+'#      ActivateColumnLabel     'Double click on a column header
+'#      ClickColumnLabel        'Click on a column header
+'#      DoubleClickColumnLabel  'Double click on a column header
+'#      RightClickColumnLabel   'Right click on a column header
+'#      VerifyColumnLabel       'Verify column header's label
+'#      AssignCellContainsTextRow   'Find the table-cell according to conditions,
+'#                                   assign cell value to STAF Varialble
+'#                                   comparaison is case-insensitive and can be sub-string match
+'#      AssignCellTextRow           'Find the table-cell according to conditions,   
+'#                                   assign cell value to STAF Varialble
+'#                                   comparaison is case-sensitive and must be full-string match
+'#      SelectCellContainsTextFind  'Find the table-cell according to conditions and click on cell
+'#                                   comparaison is case-insensitive and can be sub-string match
+'#      SelectCellTextFind          'Find the table-cell according to conditions and click on cell
+'#                                   comparaison is case-sensitive and can be full-string match 
+'#      SelectFuzzyCellTextFind     'Find the table-cell according to conditions and click on cell
+'#                                   comparaison is case-insensitive and can be sub-string match 
+'#      VerifyCellTextFind          'Find the table-cell according to conditions and verify cell value
+'#                                   comparaison is case-sensitive and can be full-string match 
+'#      VerifyFuzzyCellTextFind     'Find the table-cell according to conditions and verify cell value
+'#                                   comparaison is case-insensitive and can be sub-string match
+'#      AssignVariableCellText      'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', assign cell value to variable
+'#      AssignVariableFuzzyCellText 'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', assign cell value to variable
+'#                                   comparaison is case-insensitive and can be sub-string match
+'#      SelectCellText              'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', and click the cell
+'#      SelectFuzzyCellText         'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', and click the cell
+'#                                   comparaison is case-insensitive and can be sub-string match
+'#      VerifyCellText              'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', and verify the cell value to bench value
+'#      VerifyCellTextContains      'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', and verify the cell value to bench value 
+'#                                   verification is case-insensitive and can be sub-string match
+'#      VerifyFuzzyCellText         'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', and verify the cell value to bench value
+'#                                   comparaison of header is case-insensitive and can be sub-string match
+'#      VerifyCellTextContains      'Find the table-cell according to 'row number/label' and
+'#                                   'column number/label', and verify the cell value to bench value
+'#                                   comparaison of header is case-insensitive and can be sub-string match 
+'#                                   verification is case-insensitive and can be sub-string match
+'#      CaptureFuzzyRangeToFile     'Capture cell values of a range of table and write to a file.
+'#                                  'comparaison is case-insensitive and can be sub-string match
+'#      CaptureRangeToFile          'Capture cell values of a range of table and write to a file.
+'#                                  'comparaison is case-sensitive and should be full-string match
+'#      SelectCellTextSpecial       'Find the table-cell according to 'row number' and 'column number'
+'#                                   click that cell with some special keys or button pressed according to
+'#                                   parameter 'specialKey' and 'MouseClick'
+'#      VerifyCellEditable          'Find the table-cell according to 'row number' and 'column number'
+'#                                   and verify if that cell is editable.
+'#  
+'# Orig Author: Lei Wang
+'# Orig   Date: DEC 13, 2011
+'# History:
+'#
+'#      DEC 13, 2011    Original Release
+'#      AUG 21, 2013    (Lei Wang) Refactor to move the common Subs from FlexDataGrid and NetDataGrid
+'#      JUl 03, 2014    (Carl Nagle) Support CaptureObjectDataToFile
+'#      JUl 09, 2014    (Carl Nagle) Fixed Convert2DimensionArray to handle 1D arrays if passed in.
+'#
+'##############################################################################
+
+
+'# SCRIPT CONSTANTS
+' Valid TESTCOMMANDS 
+
+'# PUBLIC DEPENDENCIES
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT LogUtilities_X
+'USEUNIT ApplicationUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT StepDriver_X
+'USEUNIT DDGUIUtilities
+'USEUNIT GenericMasterFunctions
+'USEUNIT GenericObjectFunctions
+'USEUNIT LogUtilities
+'USEUNIT StringUtilities
+'USEUNIT DDVariableStore 
+'USEUNIT FileUtilities
+'USEUNIT DDUtilities
+'USEUNIT FlexDataGrid
+'USEUNIT NetDataGrid
+'USEUNIT JavaDataGrid
+'USEUNIT DataGrid_X
+
+'# FORWARD DECLARATIONS
+
+'############################################################################
+'#
+'#   Sub DoCaptureTableRangeToFile(fuzzy)
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to capture cell values of a part of table to a file.
+'#
+'#
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------   
+'# 
+'#       5      Text filename.  Relative paths suitable for FindSQAFile
+'#              can be used.  Normally, the file would reside in the 
+'#              Project's Datapool\Test directory, if it doesn't exist, a new
+'#              file will be created.
+'#
+'#       6      (Optional) Row.     Row number (1-based), or row header value ( to compare with 
+'#                                  values of first column). Default value is 1.
+'#
+'#       7      (Optional)Column.   Column number (1-based), or column header value.Default value is 1.
+'#
+'#       8      (Optional)Rows.     Number of rows to read. If not provided, all rest rows will be read.
+'#
+'#       9      (Optional)Columns.  Numnber of columns to read.If not provided, all rest
+'#                                  columns will be read.
+'#
+'#       10     (Optional) File encoding. Support "utf-8", "ascii". If it is not
+'#              provided, system default encoding will be used.
+'#
+'#       11     (Optional) Filter MODE to be used on the retrieved property value.
+'#              This is for future implementations that will allow us to 
+'#              filter out dynamic text that we don't want to include in 
+'#              comparisons.  This is NOT currently implemented.
+'#
+'#       12     (Optional) Filter OPTIONS to be used in conjunction with any 
+'#              supplied Filter MODE.  This is not currently implemented.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      JUl 03, 2014    (Carl Nagle) Support CaptureObjectDataToFile
+'#      JUL 09, 2014    (Carl Nagle) Removed CaptureObjectDataToFile support.
+'#
+'############################################################################
+Sub DoCaptureTableRangeToFile(fuzzy)
+
+    Dim status
+    Dim content, listcontent
+    Dim testfile
+    Dim row, column, rows, columns
+    Dim totalRowLength, totalColumnLength
+    Dim encoding
+    Dim testpath, sResult
+    Dim searchFirst
+    
+    with otrd
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate test file specification
+        testfile = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If testfile = "" Then 
+            LogMessage "No Test file specified for "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       .InputRecord
+            Exit Sub
+        End If
+
+        'for parameter 'row' and 'column', they can be given by number or text
+        'if searchFirst is true, function getRowNumber() will treat parameter as text firstly
+        'For Flex domain, this field searchFirst is set to True
+        'If the 'row header'/'column header' contains number, we should not convert it to index,
+        'we should force search firstly, that is, set searchFirst = True
+        searchFirst = False                
+        If StringEqualIgnoreCase(otrd.environment, DDU_FLEX_ENVIRONMENT) Then searchFirst=True
+        
+        'get and validate row
+        row = ""        
+        row = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If row = "" then 
+            SAFSDebug "The optional parameter 'row' is not provided.", DEBUG_INFO
+            row = 1
+        Else
+            row = DataGrid.getRowNumber(.compGUIID, row, fuzzy, fuzzy, searchFirst)
+            If row < 0 Then
+                SAFSDebug "Can't convert '"& CStr(row)&"' to row number", DEBUG_ERROR
+                LogMessage "Parameter Error. "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't convert '"& CStr(row)&"' to row number"
+                Exit Sub                
+            End If
+        End If
+
+        'get and validate column
+        column = ""
+        column = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        If column = "" then 
+            SAFSDebug "The optional parameter 'column' is not provided.", DEBUG_INFO
+            column = 1
+        Else
+            column = DataGrid.getColumnNumber(.compGUIID, column, fuzzy, fuzzy, searchFirst)
+            If column < 0 Then
+                SAFSDebug "Can't convert '"& CStr(column)&"' to column number", DEBUG_ERROR
+                LogMessage "Parameter Error. "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't convert '"& CStr(column)&"' to column number"
+                Exit Sub                
+            End If
+        End If
+
+        'get and validate rows
+        rows = ""
+        rows = GetTrimmedQuotedField(.inputrecord, 8, .separator)
+        If rows = "" then 
+            SAFSDebug "The optional parameter 'rows' is not provided.", DEBUG_INFO
+            totalRowLength = DataGrid.GetRowCount(.compGUIID)  
+            rows = totalRowLength - row + 1
+        Else
+            rows = CInt(rows)
+            If Err.Number=13 or rows <= 0 Then
+                SAFSDebug "Can't convert '"& CStr(rows)&"' to number, or it isn't positive.", DEBUG_ERROR
+                LogMessage "Parameter Error. "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't convert '"& CStr(rows)&"' to number, or it isn't positive."
+                Exit Sub                
+            End If
+        End If
+
+        'get and validate columns
+        columns = ""
+        columns = GetTrimmedQuotedField(.inputrecord, 9, .separator)
+        If columns = "" then 
+            SAFSDebug "The optional parameter 'columns' is not provided.", DEBUG_INFO
+            totalColumnLength = DataGrid.GetColumnCount(.compGUIID)
+            columns = totalColumnLength - column + 1
+        Else
+            columns = CInt(columns)
+            If Err.Number=13 or columns <= 0 Then
+                SAFSDebug "Can't convert '"& CStr(columns)&"' to number, or it isn't positive.", DEBUG_ERROR
+                LogMessage "Parameter Error. "& .TestCommand &" in table "& _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't convert '"& CStr(columns)&"' to number, or it isn't positive."
+                Exit Sub                
+            End If
+        End If
+                                        
+        'get encoding parameter
+        encoding = GetTrimmedQuotedField(.inputrecord, 10, .separator)
+        SAFSDebug "The file encoding is " & encoding, DEBUG_INFO
+                
+        'extract and validate future filter MODE here
+        
+        'extract and validate future filter OPTIONS here
+
+        .windowGUIID.Activate
+
+        'content will be a 2-dimension array containing the value of cell range
+        status = DataGrid.getDataGridCellRange(.compGUIID, row, column, rows, columns, content)
+        
+        If status <> 0 Then
+            LogMessage "Error retrieving cell range for "& .TestCommand &" in table "& _
+                   .FileName &" at line "& .LineNumber, _
+                   FAILED_MESSAGE, _
+                   "Error code: "& CStr(status)
+            Exit Sub
+        Else
+            If Not DataGrid.Convert2DimensionArray(content, listcontent) Then
+                SAFSDebug "Fail to convert array from 2 dimension to 1 dimension!", DEBUG_WARN
+            End If      
+        End If
+
+        testpath = GetTestFileFullPath(testfile)
+        If testpath = "" Then
+            SAFSDebug "Can't find the full path for test file '"&testfile&"'", DEBUG_DEBUG
+            LogMessage "Could not determine output testdata filename for "& _
+                   .TestCommand &" in table "& .FileName &" at line "& _
+                   .LineNumber, FAILED_MESSAGE, _
+                   .InputRecord
+            Exit Sub
+        End If
+
+        status = WriteArrayToFile(testpath, listcontent, False, encoding)
+        
+        'perform any future filtering on testdata (and benchmark?)
+
+        If status <> 0 Then
+            LogMessage .CompName &" "& .TestCommand &" Failed. " & _
+                       .FileName &" at line "& .LineNumber, _
+                       FAILED_MESSAGE, _
+                       " Error code: "& CStr(status)
+            Exit Sub
+        Else
+            LogMessage .CompName &" "& .TestCommand &" Succeed." , _
+                       PASSED_MESSAGE, _
+                       "Cell Range is saved to file '" & testpath &"'."
+                       
+            .statuscode = SDNoScriptFailure
+        End If
+        
+    End With
+    
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoSelectCellTextSpecial()
+'#
+'# DESCRIPTION:
+'#
+'#      According the 'row num' and 'column num' to search the cell
+'#      and click it with some special keys pressed down
+'#
+'#      The special key is given as Field #5, it can be 'Control' or 'Shift'
+'#      The mouse button is given as Field #6, it is 'Left' or 'Right'
+'#      The row unmber is given as Field #7, it is 1 based index
+'#      The column unmber is given as Field #8, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       special key
+'#       6          N       mouse button
+'#       7          N       row number
+'#       8          N       column number
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: NOV 11, 2011
+'# History:
+'#
+'#      NOV 11, 2011    Original Release      
+'#
+'############################################################################
+Sub DoSelectCellTextSpecial()
+    Dim specialKey, mouseButton
+    Dim row, column
+
+    Dim clickWithRightButton
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        
+        'Get parameters from the input record
+        'get specialKey
+        specialKey = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If specialKey = "" Then
+            SAFSDebug "The parameter 'specialKey' is not provided.", DEBUG_WARN   
+        End If
+ 
+        'get mouseButton
+        mouseButton = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If mouseButton = "" Then
+            SAFSDebug "The parameter 'mouseButton' is not provided.", DEBUG_WARN   
+        End If
+                       
+        'get row
+        row = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        If row = "" Then
+            SAFSDebug "The parameter 'row' is not provided.", DEBUG_WARN
+            row = 1
+        Else
+            'If the cell contains number, we should not convert it to index,
+            'we should force search in the first column
+            'row = getRowNumber(.compGUIID, row, contains, contains, True)
+            row = DataGrid.getRowNumber(.compGUIID, row, True, True, False)    
+        End If
+        
+        'get column
+        column = GetTrimmedQuotedField(.inputrecord, 8, .separator)
+        If column = "" Then
+            SAFSDebug "The parameter 'column' is not provided.", DEBUG_WARN
+            column = 1
+        Else
+            column = DataGrid.getColumnNumber(.compGUIID, column, True, True, False)
+        End If                 
+        
+        If (row<0) or (column<0) Then
+            SAFSDebug "Can't find the cell(" &CStr(row)& "," &CStr(column)& ").", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the cell(" &CStr(row)& "," &CStr(column)& ")."            
+            Exit Sub         
+        End If
+        
+        'Convert the special key to value needed by TC API
+        If StringEqual(specialKey, SPECIAL_KEY_CONTROL) Then
+            specialKey = skCtrl
+        ElseIf StringEqual(specialKey, SPECIAL_KEY_SHIFT) Then
+            specialKey = skShift
+        Else
+            specialKey = skNoShift
+        End If
+        
+        'Decide if click with right button
+        clickWithRightButton = False
+        If StringEqual(mouseButton, MOUSE_BUTTON_RIGHT) Then
+            clickWithRightButton = True
+        End If
+        
+        'Click the cell
+        rc = DataGrid.clickDataGridCellItem(.compGUIID, row, column, False, clickWithRightButton, specialKey)
+                
+        If rc <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to click cell("&CStr(row)&","&CStr(column)&"). Error=" & rc
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", _
+                        PASSED_MESSAGE,_
+                        "Click cell("&CStr(row)&","&CStr(column)&")."
+        End If
+
+    End With
+    
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoAssignCellText(contains)
+'#
+'# DESCRIPTION:
+'#
+'#      According the 'row num/lable' and 'column num/label' to search the cell
+'#      and assign the cell value to the STAF Variables.
+'#
+'#      The variable name is given as Field #5
+'#      The row unmber is given as Field #6, it is 1 based index
+'#      The column unmber is given as Field #7, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       variable name
+'#       6          N       row number or label
+'#       7          N       column number or label
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      contains        If true, the match will be case-insensitive, and the given
+'#                      value can be sub-string of the cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoAssignCellText(contains)
+    Dim varName, row, column
+
+    Dim cellValue
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        
+        'Get parameters from the input record
+        'get variable name
+        varName = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If varName = "" Then
+            SAFSDebug "The required parameter 'variable name' is not provided.", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "The required parameter 'variable name' is not provided."            
+            Exit Sub
+        End If
+
+        'get row
+        row = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If row = "" Then
+            SAFSDebug "The optional parameter 'row' is not provided.", DEBUG_WARN
+            row = 1
+        Else
+            'If the 'row header'/'column header' contains number, we should not convert it to index,
+            'we should force search firstly, that is, set searchFirst = True
+            'row = getRowNumber(.compGUIID, row, contains, contains, True)
+            row = DataGrid.getRowNumber(.compGUIID, row, contains, contains, False)    
+        End If
+        
+        'get column
+        column = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        If column = "" Then
+            SAFSDebug "The optional parameter 'column' is not provided.", DEBUG_WARN
+            column = 1
+        Else
+            column = DataGrid.getColumnNumber(.compGUIID, column, contains, contains, False)
+        End If                 
+        
+        If (row<0) or (column<0) Then
+            SAFSDebug "Can't find the cell(" &CStr(row)& "," &CStr(column)& ").", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the cell(" &CStr(row)& "," &CStr(column)& ")."            
+            Exit Sub         
+        End If
+        
+        'Get the cell value
+        cellValue = DataGrid.getCellItemValue(.compGUIID, row, column)
+
+        'Store the cell value to the STAF variable
+        DDVSetVariableValue varName, cellValue
+                
+        If Err.Number <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to assign STAF Variable. Error=" & Err.Number
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. " &varName& "=" &cellValue, _
+                        PASSED_MESSAGE, ""
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoVerifyCellEditable() 
+'#
+'# DESCRIPTION:
+'#
+'#      According the 'row num' and 'column num' to search the cell
+'#      and verify if it is editable
+'#
+'#      The row unmber is given as Field #5, it is 1 based index
+'#      The column unmber is given as Field #6, it is 1 based index
+'#      The expected boolean editable is given as Field #7
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       row number
+'#       6          N       column number
+'#       7          N       editable
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: NOV 11, 2011
+'# History:
+'#
+'#      NOV 11, 2011    Original Release      
+'#
+'############################################################################
+Sub DoVerifyCellEditable()
+    Dim expectedEditable
+    Dim editable
+    Dim row, column
+
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        
+        'Get parameters from the input record               
+        'get row
+        row = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If row = "" Then
+            SAFSDebug "The parameter 'row' is not provided.", DEBUG_WARN
+            row = 1
+        Else
+            'If the cell contains number, we should not convert it to index,
+            'we should force search in the first column
+            'row = getRowNumber(.compGUIID, row, contains, contains, True)
+            row = DataGrid.getRowNumber(.compGUIID, row, True, True, False)    
+        End If
+        
+        'get column
+        column = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If column = "" Then
+            SAFSDebug "The parameter 'column' is not provided.", DEBUG_WARN
+            column = 1
+        Else
+            column = DataGrid.getColumnNumber(.compGUIID, column, True, True, False)
+        End If
+ 
+        If (row<0) or (column<0) Then
+            SAFSDebug "Can't find the cell(" &CStr(row)& "," &CStr(column)& ").", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the cell(" &CStr(row)& "," &CStr(column)& ")."            
+            Exit Sub         
+        End If
+
+        'get expectedEditable
+        expectedEditable = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        If expectedEditable = "" Then
+            SAFSDebug "The parameter 'expectedEditable' is not provided.", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "The parameter 'expectedEditable' is not provided."            
+            Exit Sub
+        End If
+
+        'Convert the editable from string value to boolean value
+        expectedEditable = ConvertBool(expectedEditable)
+        'Get the cell's editable value
+        editable = DataGrid.isCellEditable(.compGUIID, row, column)
+
+        If editable <> expectedEditable Then
+            LogMessage .testcommand & " Failed. " & _
+                        "in table "& .FileName &" at line "& _
+                        .LineNumber, _
+                        FAILED_MESSAGE, _
+                        "For Cell(" &CStr(row)&","&CStr(column)&"): Expected Editable='"+_
+                        CStr(expectedEditable)+"' doesn't equal to Editable='"+CStr(editable)+"'"
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", _
+                        PASSED_MESSAGE,_
+                        "For Cell(" &CStr(row)&","&CStr(column)&"): Expected Editable='"+_
+                        CStr(expectedEditable)+"' equals to Editable='"+CStr(editable)+"'" 
+        End If
+     
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoSelectCellText(contains)
+'#
+'# DESCRIPTION:
+'#
+'#      According the 'row num/lable' and 'column num/label' to search the cell
+'#      and click it
+'#
+'#      The row unmber is given as Field #5, it is 1 based index
+'#      The column unmber is given as Field #6, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       row number or label
+'#       6          N       column number or label
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      contains        If true, the match will be case-insensitive, and the given
+'#                      value can be sub-string of the cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoSelectCellText(contains)
+    Dim row, column
+
+    Dim cellValue
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        
+        'Get parameters from the input record
+        'get row
+        row = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If row = "" Then
+            SAFSDebug "The optional parameter 'row' is not provided.", DEBUG_WARN
+            row = 1
+        Else
+            'If the cell contains number, we should not convert it to index,
+            'we should force search in the first column
+            'row = getRowNumber(.compGUIID, row, contains, contains, True)
+            row = DataGrid.getRowNumber(.compGUIID, row, contains, contains, False)    
+        End If
+        
+        'get column
+        column = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If column = "" Then
+            SAFSDebug "The optional parameter 'column' is not provided.", DEBUG_WARN
+            column = 1
+        Else
+            column = DataGrid.getColumnNumber(.compGUIID, column, contains, contains, False)
+        End If                 
+        
+        If (row<0) or (column<0) Then
+            SAFSDebug "Can't find the cell(" &CStr(row)& "," &CStr(column)& ").", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the cell(" &CStr(row)& "," &CStr(column)& ")."            
+            Exit Sub         
+        End If
+        
+        'Click the cell
+        rc = DataGrid.clickDataGridCellItem(.compGUIID, row, column, False, False, skNoShift)
+                
+        If rc <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to click cell("&CStr(row)&","&CStr(column)&"). Error=" & rc
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", _
+                        PASSED_MESSAGE,_
+                        "Click cell("&CStr(row)&","&CStr(column)&")."
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoVerifyCellText(fuzzy, contains)
+'#
+'# DESCRIPTION:
+'#
+'#      According the 'row num/lable' and 'column num/label' to search the cell
+'#      and verify the cell value with the given bench value.
+'#
+'#      The bench value is given as Field #5
+'#      The row unmber is given as Field #6, it is 1 based index
+'#      The column unmber is given as Field #7, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       variable name
+'#       6          N       row number or label
+'#       7          N       column number or label
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      fuzzy           If true, the match of header will be case-insensitive,
+'#                      and the given value can be sub-string of the cell value
+'#      contains        If true, the match of cell value will be case-insensitive,
+'#                      and the given value can be sub-string of the cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'############################################################################
+Sub DoVerifyCellText(fuzzy, contains)
+    Dim benchValue, row, column
+
+    Dim cellValue
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        
+        'Get parameters from the input record
+        'get bench value
+        benchValue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If benchValue = "" Then
+            SAFSDebug "The parameter 'bench value' is not provided.", DEBUG_WARN
+        End If
+
+        'get row
+        row = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If row = "" Then
+            SAFSDebug "The optional parameter 'row' is not provided.", DEBUG_WARN
+            row = 1
+        Else
+            'If the cell contains number, we should not convert it to index,
+            'we should force search in the first column
+            'row = getRowNumber(.compGUIID, row, contains, contains, True)
+            row = DataGrid.getRowNumber(.compGUIID, row, fuzzy, fuzzy, False)    
+        End If
+        
+        'get column
+        column = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        If column = "" Then
+            SAFSDebug "The optional parameter 'column' is not provided.", DEBUG_WARN
+            column = 1
+        Else
+            column = DataGrid.getColumnNumber(.compGUIID, column, fuzzy, fuzzy, False)
+        End If                 
+        
+        If (row<0) or (column<0) Then
+            SAFSDebug "Can't find the cell(" &CStr(row)& "," &CStr(column)& ").", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the cell(" &CStr(row)& "," &CStr(column)& ")."            
+            Exit Sub         
+        End If
+        
+        'Get the cell value
+        cellValue = DataGrid.getCellItemValue(.compGUIID, row, column)
+                
+        If Not StringMatch(cellValue, benchValue, contains, contains) Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Cell value: '"&cellValue&"' doesn't match bench value: '"&benchValue&"'"
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", _
+                        PASSED_MESSAGE, _
+                        "Cell value: '"&cellValue&"' matches bench value: '"&benchValue&"'" 
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoAssignCellTextFind(contains)
+'#
+'# DESCRIPTION:
+'#
+'#      According the conditions to search the cell and assign the row number and
+'#      cell value to the STAF Variables.
+'#
+'#      The variable name is given as Field #5
+'#      The column unmber is given as Field #6, it is 1 based index
+'#      The search conditions are given as the rest fields, they are pairs of (colN,valueN),
+'#      so the number of the rest fields must be even
+'#      According to the search conditons, the row number will be found, with column unmber
+'#      given as Field #6, the table cell will be located.
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       variable name
+'#       6          N       column number or label
+'#
+'#       7          N       column number or label
+'#       8          N       cell value
+'#       .          N       column number or label
+'#       .          N       cell value
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      contains        If true, the match will be case-insensitive, and the given
+'#                      value can be sub-string of the cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoAssignCellTextFind(contains)
+    Dim benchValue, varName, column
+    Dim columns, values
+    
+    Dim row, modelRowNumber
+    Dim cellValue
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        
+        'Get parameters from the input record 
+        rc = DataGrid.getParametersForTextFind(False, contains, benchValue, varName, column, columns, values)
+        If rc <> 0 Then
+            SAFSDebug "Met error when processing parameters. Error code=" & CStr(rc), DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Met error when processing parameters. Error code=" & CStr(rc)            
+            Exit Sub        
+        End If
+                
+        .windowGUIID.Activate
+        
+        'The row number returned is the number on the table render
+        'Maybe we need to get the row of the whole table to store in the STAF variable        
+        row = DataGrid.findMatchRow(.compGUIID, columns, values, contains, contains, modelRowNumber,0)
+        If row < 0 Then
+            SAFSDebug "Can't find the matched row.", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the matched row."            
+            Exit Sub        
+        End If
+        
+        cellValue = DataGrid.getCellItemValue(.compGUIID, row, column)
+
+        'Store the row-number and the cell-value to the STAF variable
+        DDVSetVariableValue varName, CStr(modelRowNumber)        
+        DDVSetVariableValue varName&".Value", cellValue         
+                
+        If Err.Number <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to assign STAF Variable. Error=" & Err.Number
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. " &varName& "=" &CStr(row)& _
+                                      "; " & varName&".Value" & "=" & cellValue, _
+                        PASSED_MESSAGE, ""
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoSelectCellTextFind(contains)
+'#
+'# DESCRIPTION:
+'#
+'#      According the conditions to search the cell and assign the cell value to the STAF Variable.
+'#      Then click the found cell.
+'#
+'#      The variable name is given as Field #5
+'#      The column unmber is given as Field #6, it is 1 based index
+'#      The search conditions are given as the rest fields, they are pairs of (colN,valueN),
+'#      so the number of the rest fields must be even
+'#      According to the search conditons, the row number will be found, with column unmber
+'#      given as Field #6, the table cell will be located.
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       variable name
+'#       6          N       column number or label
+'#
+'#       7          N       column number or label
+'#       8          N       cell value
+'#       .          N       column number or label
+'#       .          N       cell value
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      contains        If true, the match will be case-insensitive, and the given
+'#                      value can be sub-string of the cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoSelectCellTextFind(contains)
+    Dim benchValue, varName, column
+    Dim columns, values
+    
+    Dim row, modelRowNumber
+    Dim cellValue
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        'Get parameters from the input record 
+        rc = DataGrid.getParametersForTextFind(False, contains, benchValue, varName, column, columns, values)
+        If rc <> 0 Then
+            SAFSDebug "Met error when processing parameters. Error code=" & CStr(rc), DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Met error when processing parameters. Error code=" & CStr(rc)            
+            Exit Sub        
+        End If
+        
+        .windowGUIID.Activate
+        
+        'The row number returned is the number on the table render
+        'Maybe we need to get the row of the whole table to store in the STAF variable
+        row = DataGrid.findMatchRow(.compGUIID, columns, values, contains, contains, modelRowNumber,0)
+        If row < 0 Then
+            SAFSDebug "Can't find the matched row.", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the matched row."            
+            Exit Sub        
+        End If
+        
+        cellValue = DataGrid.getCellItemValue(.compGUIID, row, column)
+
+        'Store the row-number and cell-value to the STAF variable
+        DDVSetVariableValue varName, CStr(modelRowNumber)        
+        DDVSetVariableValue varName&".Value", cellValue
+                
+        If Err.Number <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to assign STAF Variable. Error=" & Err.Number
+            Exit Sub
+        End If
+
+        rc = DataGrid.clickDataGridCellItem(.compGUIID, modelRowNumber, column, False, False, skNoShift)        
+        
+        If rc <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to click cell item. Error=" & rc
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", PASSED_MESSAGE, ""
+        End If
+        
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoVerifyCellTextFind(contains)
+'#
+'# DESCRIPTION:
+'#
+'#      According the conditions to search the cell, verify if the cell value
+'#      match the bench value given by parameter. 
+'#      And assign the row number to the STAF Variable.
+'#
+'#      The bench value is given as Field #5
+'#      The variable name is given as Field #6
+'#      The column unmber is given as Field #7, it is 1 based index
+'#      The search conditions are given as the rest fields, they are pairs of (colN,valueN),
+'#      so the number of the rest fields must be even
+'#      According to the search conditons, the row number will be found, with column unmber
+'#      given as Field #6, the table cell will be located.
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------
+'#       5          N       bench value     
+'#       6          N       variable name
+'#       7          N       column number or label
+'#
+'#       8          N       column number or label
+'#       9          N       cell value
+'#       .          N       column number or label
+'#       .          N       cell value
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      contains        If true, the match will be case-insensitive, and the given
+'#                      value can be sub-string of the cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoVerifyCellTextFind(contains)
+    Dim benchValue, varName, column
+    Dim columns, values
+    
+    Dim row, modelRowNumber
+    Dim cellValue
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        'Get parameters from the input record 
+        rc = DataGrid.getParametersForTextFind(True, contains, benchValue, varName, column, columns, values)
+        If rc <> 0 Then
+            SAFSDebug "Met error when processing parameters. Error code=" & CStr(rc), DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Met error when processing parameters. Error code=" & CStr(rc)            
+            Exit Sub        
+        End If
+        
+        .windowGUIID.Activate
+        
+        'The row number returned is the number on the table render
+        'Maybe we need to get the row of the whole table to store in the STAF variable
+        row = DataGrid.findMatchRow(.compGUIID, columns, values, contains, contains, modelRowNumber,0)
+        If row < 0 Then
+            SAFSDebug "Can't find the matched row.", DEBUG_ERROR
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Can't find the matched row."            
+            Exit Sub        
+        End If
+        
+        cellValue = DataGrid.getCellItemValue(.compGUIID, row, column)
+
+        'Store the row-number and cell-value to the STAF variable
+        DDVSetVariableValue varName, CStr(modelRowNumber)        
+        DDVSetVariableValue varName&".Value", cellValue 
+                
+        If Err.Number <> 0 Then
+            SAFSDebug "Fail to assign STAF Variable. Error=" & Err.Number, DEBUG_WARN
+        End If
+        
+        If Not StringMatch(cellValue, benchValue, contains, contains) Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "cell value '" & cellValue & "' doesn't match bench value '" &benchValue& "'"
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", _
+                        PASSED_MESSAGE, _
+                        "cell value '" & cellValue & "' matches bench value '" &benchValue& "'"
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoClickCell(doubleClick, rightClick, keys)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Click/DoubleClick/RightClick on a particular cell of the table.
+'#      The default location is row=1 column=1.
+'#
+'#      The row unmber is given as Field #5, it is 1 based index
+'#      The column unmber is given as Field #6, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          Y       row number
+'#       6          Y       column number
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      doubleClick     If true, double click cell. Otherwise, click cell.
+'#      rightClick      If true, right click cell; Otherwise, left click.
+'#      keys            TShiftKey, for detail description, see Sub clickCellItem()  
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoClickCell(doubleClick, rightClick, keys)
+    Dim row, realRow
+    Dim column, realColumn
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next 
+        'get row and column number
+        realRow = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If realRow = "" Then
+            SAFSDebug "No parameter for row, set row to 1", DEBUG_INFO
+            realRow = "1"
+        End If
+        row = CInt(realRow)
+        
+        realColumn = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If realColumn = "" Then
+            SAFSDebug "No parameter for column, set column to 1", DEBUG_INFO
+            realColumn = "1"
+        End If
+        column = CInt(realColumn)
+        
+        .windowGUIID.Activate
+        
+        rc = DataGrid.clickDataGridCellItem(.compGUIID, row, column, doubleClick, rightClick, keys)
+                
+        If rc <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Fail to click cell item. Error=" & rc
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. Click on cell(" & realRow & "," & realColumn & ").", _
+                        PASSED_MESSAGE, ""
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoClickHeader(doubleClick, rightClick, keys)
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Click/DoubleClick/RightClick on a particular header of the table.
+'#      The default location is column=1.
+'#
+'#      The column unmber is given as Field #5, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          Y       column number
+'#
+'# SUB INPUT PARAMETERS:
+'#
+'#      doubleClick     If true, double click cell. Otherwise, click cell.
+'#      rightClick      If true, right click cell; Otherwise, left click.
+'#      keys            TShiftKey, for detail description, see Sub clickCellItem()  
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: JUL 13, 2012
+'# History:
+'#
+'#      JUL 13, 2012    Original Release
+'#      
+'#
+'############################################################################
+Sub DoClickHeader(doubleClick, rightClick, keys)
+    Dim column
+    Dim Yoffset
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next 
+        'get column number
+        column = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If column = "" Then
+            SAFSDebug "No parameter for column, set column to 1", DEBUG_INFO
+            column = "1"
+        End If
+
+        'get Yoffest (Future)
+        'Yoffset = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        'If Yoffset = "" Then
+        '    SAFSDebug "No parameter for YOffest", DEBUG_INFO
+        'End If
+        
+        .windowGUIID.Activate
+                
+        'click on header    
+        rc = DataGrid.clickHeader(.compGUIID, CInt(column), doubleClick, rightClick, keys)
+                
+        If rc <> 0 Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _
+                       "Error=" & rc
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. Click on header(" & CStr(column) & ").", _
+                        PASSED_MESSAGE, ""
+        End If
+
+    End With
+End Sub
+
+'############################################################################
+'#
+'#   Sub DoVerifyHeader()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Verify the header indicated by the index has the label given by parameter
+'#
+'#      The column label is given as Field #5
+'#      The column unmber is given as Field #6, it is 1 based index
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       column label
+'#       6          N       column number  
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: OCT 19, 2011
+'# History:
+'#
+'#      OCT 19, 2011    Original Release
+'#      
+'#
+'############################################################################
+Sub DoVerifyHeader()
+    Dim column
+    Dim columnLabel
+    Dim headerText
+    Dim rc
+    
+    With otrd
+        'set default failure mode    
+        .StatusCode = SDGeneralScriptFailure
+        
+        On Error Resume Next
+        'get column label
+        columnLabel = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        If columnLabel = "" Then
+            SAFSDebug "No parameter for column label.", DEBUG_WARN
+        End If
+                 
+        'get column number
+        column = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        If column = "" Then
+            SAFSDebug "No parameter for column, set column to 1", DEBUG_INFO
+            column = "1"
+        End If
+
+        .windowGUIID.Activate
+                
+        headerText = DataGrid.getColumnHeader(.compGUIID, CInt(column)-1, True)
+        SAFSDebug "header("& column &")=" & headerText, DEBUG_INFO
+        
+        If Err.Number <> 0 Then
+            SAFSDebug "Can't get the datagrid's header("& column &").", DEBUG_ERROR
+            LogMessage .testcommand & " Failed.", _
+                        FAILED_MESSAGE, "Can't get the datagrid's header("& column &"). Error=" & Err.Number
+            Exit Sub
+        End If        
+                
+        If Not StringEqual(columnLabel,headerText) Then
+            LogMessage .testcommand & " Failed. " & _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, _
+                       FAILED_MESSAGE, _ 
+                       "The " & column & "th header is '" & headerText & "'" & _
+                       ", it doesn't equal to '" & columnLabel & "'"
+        Else        
+            .StatusCode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded.", _
+                        PASSED_MESSAGE, "The " & column & "th header is '" & headerText & "'" &_
+                        ", it equals to '" & columnLabel & "'"
+        End If
+
+    End With
+        
+End Sub
+
+
+'############################################################################
+'#
+'#   Function getParametersForTextFind(isVerifyKeyword, contains, benchValue, varName, column, columns, values)
+'#
+'# DESCRIPTION:
+'#
+'#      Get parameters from the input record. This will be invoked by Sub
+'#      DoAssignCell()
+'#      DoSelectCellTextFind()
+'#      DoVerifyCellTextFind()
+'#      
+'#      For keywords:
+'#          AssignCellContainsTextRow
+'#          AssignCellTextRow
+'#          SelectCellContainsTextFind
+'#          SelectCellTextFind
+'#          SelectFuzzyCellTextFind
+'#       
+'#      The variable name is given as Field #5
+'#      The column unmber is given as Field #6, it is 1 based index
+'#
+'#      For keywrods:
+'#          VerifyCellTextFind
+'#          VerifyFuzzyCellTextFind
+'#
+'#      The bench value is given as Field #5 
+'#      The variable name is given as Field #6
+'#      The column unmber is given as Field #7, it is 1 based index
+'#
+'#
+'#      The search conditions are given as the rest fields, they are pairs of (colN,valueN),
+'#      so the number of the rest fields must be even
+'#      According to the search conditons, the row number will be found, with column unmber
+'#      given as Field #6, the table cell will be located.
+'#        
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      For keywords: AssignXXXTextRow and SelectXXXTextFind
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------    
+'#       5          N       variable name
+'#       6          N       column number or label
+'#
+'#       7          N       column number or label
+'#       8          N       cell value
+'#       .          N       column number or label
+'#       .          N       cell value
+'#
+'#      For keywords: VerifyXXXTextFind
+'#      FLD     OPTIONAL    CONTENT
+'#      ---     --------    ------------------------------ 
+'#       5          N       bench value   
+'#       6          N       variable name
+'#       7          N       column number or label
+'#
+'#       8          N       column number or label
+'#       9          N       cell value
+'#       .          N       column number or label
+'#       .          N       cell value
+'# INPUT PARAMETERS:
+'#
+'#      isVerifyKeyword True, if the keyword is VerifyXXXTextFind
+'#      contains        If true, the match will be case-insensitive, and the given
+'#                      value can be sub-string of the cell value
+'#
+'# OUTPUT PARAMETERS:
+'#
+'#      benchValue  String, bench value
+'#      varName     String, variable name
+'#      column      String, column index or column label
+'#      columns     Array, an array of column index or label
+'#      values      Array, an array of cell value
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: OCT 28, 2011
+'# History:
+'#
+'#      OCT 28, 2011    Original Release
+'#      DEC 23, 2011    Remove the extra blank parameter added by TestComposer     
+'#
+'############################################################################
+Function getParametersForTextFind(isVerifyKeyword, contains, benchValue, varName, column, columns, values)
+    Dim firstParmIndex
+    Dim conditionStartIndex
+    Dim fieldCount, conditionFieldCount
+    Dim index, tmpIndex 
+
+    With otrd     
+        On Error Resume Next
+        
+        firstParmIndex = 5
+        If isVerifyKeyword Then
+            conditionStartIndex = 8
+            'get bench value
+            benchValue = GetTrimmedQuotedField(.inputrecord, firstParmIndex, .separator)
+            If benchValue = "" Then
+                SAFSDebug "The parameter 'bench Value' is not provided.", DEBUG_WARN            
+            End If
+            firstParmIndex = firstParmIndex + 1            
+        Else
+            conditionStartIndex = 7
+        End If
+         
+        'get variable name
+        varName = GetTrimmedQuotedField(.inputrecord, firstParmIndex, .separator)
+        If varName = "" Then
+            SAFSDebug "The required parameter 'variable name' is not provided.", DEBUG_ERROR
+            getParametersForTextFind = -1            
+            Exit Function
+        End If
+        
+        'get column number or column label
+        column = GetTrimmedQuotedField(.inputrecord, firstParmIndex+1, .separator)
+        If column = "" Then
+            SAFSDebug "The required parameter 'column' is not provided.", DEBUG_ERROR
+            getParametersForTextFind = -2            
+            Exit Function
+        End If
+
+        column = DataGrid.getColumnNumber(.compGUIID, column, contains, contains, False)
+
+        If column = -1 Then
+            SAFSDebug "Can't get index for column", DEBUG_ERROR
+            getParametersForTextFind = -3            
+            Exit Function        
+        End If
+        
+        'get other parameters pairs of (colN, valueN)
+        fieldCount = GetFieldCount(.inputRecord, 1, .separator)
+        conditionFieldCount = fieldCount- (conditionStartIndex-1)
+        'The rest parameters should contains at least one pair of (colN, valueN)
+        'The restFieldCount must be even number
+        If (conditionFieldCount < 2) or (conditionFieldCount Mod 2) <> 0 Then
+            SAFSDebug "The required parameters pairs of (colN, valueN) are not properly provided.", DEBUG_WARN
+            'TestComposer will add an extra parameter "" to the test-record, we can just remove it
+            Dim lastparam
+            lastparam = GetTrimmedQuotedField(.inputrecord, fieldCount, .separator)
+            If StringEqual(lastparam,"") Then
+                fieldCount = fieldCount - 1
+                conditionFieldCount = fieldCount- (conditionStartIndex-1)
+                SAFSDebug "We can successfully ignore the empty parameter value...", DEBUG_WARN
+            Else
+                getParametersForTextFind = -4            
+                Exit Function            
+            End If
+        End If
+        
+        Redim columns(conditionFieldCount/2 - 1)
+        Redim values(conditionFieldCount/2 - 1)
+
+        tmpIndex = 0
+        For index = conditionStartIndex To fieldCount Step 2
+            columns(tmpIndex) = GetTrimmedQuotedField(.inputrecord, index, .separator)
+            values(tmpIndex) = GetTrimmedQuotedField(.inputrecord, index+1, .separator)
+            tmpIndex = tmpIndex + 1
+        Next
+
+        If Err.Number <> 0 Then
+            SAFSDebug "When processing parameters, met error: " & CStr(Err.Number), DEBUG_ERROR 
+            getParametersForTextFind = Err.Number            
+            Exit Function        
+        End If
+        
+        getParametersForTextFind = 0
+    End With
+End Function
+
+
+'############################################################################
+'# DESCRIPTION:
+'#      If rowIndexOrLabel is given as index, return it directly. Otherwise, it is
+'#      given as label, find it in the array headers and return the index, we will
+'#      consider the first column as the row header
+'# PARAMETERS:
+'#      grid                The flex DataGrid object
+'#      rowIndexOrLabel     The row index or header
+'#      ignoreCase          Boolean, if it is true, match two string case-insensitively
+'#      contains            Boolean, if it is true, verify if the value in array headers contains
+'#                                   the value of parameter columnIndexOrLabel
+'#      searchFirst         Boolean, if it is true, try to find this matched row value directly
+'#                          If the cell value contains number, this parameter shoulbe be set to true
+'#                          so that the search will be processed, otherwise, this program will
+'#                          convert the 'rowIndexOrLabel' to integer directly.
+'# RETURNS:
+'#      Integer, the row number according to parameter columnIndexOrLabel
+'#      -1, if the rowIndexOrLabel can't be found in array headers or execution
+'#          of program met some error
+'# ERRORS:
+'#       none
+'# History:
+'#      OCT 31, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getRowNumber(grid, rowIndexOrLabel, ignoreCase, contains, searchFirst)
+    Dim row
+    Dim modelRowNumber
+    Dim columns(0)
+    Dim values(0)
+    Dim rowHeadersColumnNumber
+    
+    SAFSDebug "Before conversion: rowIndex="& CStr(rowIndexOrLabel), DEBUG_INFO 
+    On Error Resume Next
+    
+    If Not searchFirst Then
+        getRowNumber = CInt(rowIndexOrLabel)
+    End If
+        
+    'If error number is 13, the value of row is the row label
+    'try to convert it to index
+    If searchFirst or Err.Number = 13 Then
+        Err.Clear
+        columns(0) = 1
+        values(0) = rowIndexOrLabel
+        
+        SAFSDebug "Searching row header '"& CStr(rowIndexOrLabel) &"'.", DEBUG_DEBUG
+        If DataGrid.hasRowHeader(grid, rowHeadersColumnNumber) Then
+            row = DataGrid.findMatchRow(grid, columns, values, ignoreCase, contains, modelRowNumber,1)
+        Else
+            row = DataGrid.findMatchRow(grid, columns, values, ignoreCase, contains, modelRowNumber,0) 
+        End If
+        
+        If row < 0 Then
+            SAFSDebug "Can't find index for row header '"& CStr(rowIndexOrLabel)  &"'", DEBUG_WARN        
+            'If we force to search row firstly, if row can't be found
+            'we need to convert it to an integer
+            If searchFirst Then
+                Err.Clear
+                getRowNumber = CInt(rowIndexOrLabel)
+                If Err.Number = 13 Then
+                    SAFSDebug "Try to convert '"& CStr(rowIndexOrLabel)& "' to index as Integer.", DEBUG_DEBUG
+                    Err.Clear
+                    getRowNumber = -1
+                End If
+            Else
+                getRowNumber = -2
+            End If
+        Else
+            getRowNumber = modelRowNumber
+        End If
+    End If
+    SAFSDebug "After conversion: rowIndex="& CStr(getRowNumber), DEBUG_INFO
+    
+    If Err.Number <> 0 Then
+        SAFSDebug "Can't find index for row header '"& CStr(rowIndexOrLabel)& _
+                  "'. Error code=" & CStr(Err.Number), DEBUG_ERROR
+        getRowNumber = -3
+    End If
+    
+End Function
+
+
+'############################################################################
+'# DESCRIPTION:
+'#      If columnIndexOrLabel is given as index, return it directly. Otherwise, it is
+'#      given as label, find it in the array headers and return the index
+'# PARAMETERS:
+'#      grid                The Flex DataGrid object
+'#      columnIndexOrLabel  The column index or header
+'#      ignoreCase          Boolean, if it is true, match two string case-insensitively
+'#      contains            Boolean, if it is true, verify if the value in array headers contains
+'#                                   the value of parameter columnIndexOrLabel
+'#      searchFirst         Boolean, if it is true, try to search the column label within
+'#                          table headers before convert it to an integer
+'# RETURNS:
+'#      Integer, the column number according to parameter columnIndexOrLabel, 1-based
+'#      -1, if the columnIndexOrLabel can't be found in array headers or execution
+'#          of program met some error
+'# ERRORS:
+'#       none
+'# History:
+'#      OCT 24, 2011    (Lei Wang) Original Release
+'#
+'############################################################################
+Function getColumnNumber(grid, columnIndexOrLabel, ignoreCase, contains, searchFirst)
+    Dim column
+    Dim headers
+    Dim labelFound
+    Dim headerText    
+
+    SAFSDebug "Before conversion: columnIndex="& CStr(columnIndexOrLabel), DEBUG_INFO 
+    On Error Resume Next
+    headers = getColumnHeaders(grid)
+    'We need to test if the headers is correctly assigned
+    
+    If Not searchFirst Then
+        getColumnNumber = CInt(columnIndexOrLabel)
+    End If
+    
+    'If searchFirst is true, try to search column label in table headers    
+    'If error number is 13, the value of column is the column label
+    'try to convert it to index
+    If searchFirst or Err.Number = 13 Then
+        Err.Clear
+        SAFSDebug "Searching column header '"& CStr(columnIndexOrLabel)& "'", DEBUG_DEBUG
+        labelFound = False
+        For column = 0 To UBound(headers)
+            headerText = headers(column)
+            SAFSDebug "'" & headerText & "'='" & columnIndexOrLabel & "'?", DEBUG_INFO
+            If StringMatch(headerText, columnIndexOrLabel,ignoreCase, contains) Then
+                getColumnNumber = column + 1
+                labelFound = True
+                Exit For                
+            End If       
+        Next
+
+        'If the header can't be found, we will try to convert it to index as Integer
+        If Not labelFound Then
+            SAFSDebug "Can't find index for column header '"& CStr(columnIndexOrLabel)& "'", DEBUG_WARN
+            'Try to convert it to Integer directly
+            If searchFirst Then
+                SAFSDebug "Try to convert '"& CStr(columnIndexOrLabel)& "' to index as Integer.", DEBUG_INFO
+                getColumnNumber = CInt(columnIndexOrLabel)
+                If Err.Number = 13 Then
+                    getColumnNumber = -1
+                    Err.Clear
+                End If
+            Else
+                getColumnNumber = -1
+            End If            
+        End If
+    End If
+    SAFSDebug "After conversion: columnIndex="& CStr(getColumnNumber), DEBUG_INFO
+    
+    If Err.Number <> 0 Then
+        SAFSDebug "Can't find index for column header '"& CStr(columnIndexOrLabel)& _
+                  "'. Error code=" & CStr(Err.Number), DEBUG_ERROR
+        getColumnNumber = -1
+    End If
+    
+End Function
+
+
+
+'####################################################################################################
+'====================================================================================================
+'=====================================  Methods switch according to domain  =========================
+'====================================================================================================
+'####################################################################################################
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get an array of datagrid's column headers (DataGridColumn object)
+'# PARAMETERS:
+'#      grid    The Flex DataGrid object
+'# RETURNS:
+'#      An array of datagrid's column headers 
+'# History:
+'#      AUG 22, 2013    (Lei Wang) Original Release
+'############################################################################
+Function getColumnHeaders(grid)
+    'If the parameter column is "column label", convert it to column number
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            getColumnHeaders = FlexDataGrid.getColumnHeaders(grid)
+        Case DDU_JAVA_ENVIRONMENT
+            getColumnHeaders = JavaDataGrid.getColumnHeaders(grid)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            getColumnHeaders = NetDataGrid.getColumnHeaders(grid)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Test if a datagrid has a 'row header'
+'#      This function is not trustable, it need to be modified for different kinds
+'#      of DataGrid, depends on how the 'row header' is implemented.
+'# PARAMETERS:
+'#      datagrid                (In)  The Flex DataGrid object.
+'#      rowHeaderColumnNumber   (Out) How many columns does 'row header' contain
+'# RETURNS:
+'#      True if the datagrid has a row header
+'# ERRORS:
+'#       none
+'# History:
+'#      AUG 22, 2013    (Lei Wang) Original Release
+'############################################################################
+Function hasRowHeader(datagrid, rowHeaderColumnNumber)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            hasRowHeader = FlexDataGrid.hasRowHeader(datagrid, rowHeaderColumnNumber)
+        Case DDU_JAVA_ENVIRONMENT
+            hasRowHeader = JavaDataGrid.hasRowHeader(datagrid, rowHeaderColumnNumber)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            hasRowHeader = NetDataGrid.hasRowHeader(datagrid, rowHeaderColumnNumber)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'#  Function findMatchRow(grid, columns, values, ignoreCase, contains, modelRowNumber, indexOfContent)
+'# DESCRIPTION:
+'#      Search the row according to the row values condition, and return the
+'#      matched row number.
+'#      Attention: the row number is the number on the table render (the current page)
+'#                 If the table is scrolled, the row number will be wrong!!!
+'#                 The last parameter 'modelRowNumber' will contains the row number of
+'#                 the total table (not the number of current page)
+'#      If the table contains multiple pages, we need to scroll to the first page
+'#      , then search for the row page after page.
+'# PARAMETERS:
+'#      grid            In: The DataGrid object
+'#      columns         In: An array of column label or column number
+'#      values          In: An array of string vlaues, to be matched with the cell value
+'#      ignoreCase      In: Boolean, if it is true, match two string case-insensitively
+'#      contains        In: Boolean, if it is true, verify if the cell value contains the value in array
+'#                      of the given parameter values
+'#      modelRowNumber  Out: the real row number of the whole table, 1-based
+'#      indexOfContent  In: Not used
+'# RETURNS:
+'#      Integer, the row number matching the row values condition, the row number is 1-based.
+'#      A negative number if the row can' be found
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      JUL 13, 2012    Original Release
+'############################################################################
+Function findMatchRow(grid, columns, values, ignoreCase, contains, modelRowNumber, indexOfContent)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            findMatchRow = FlexDataGrid.findMatchRow(grid, columns, values, ignoreCase, contains, modelRowNumber, indexOfContent)
+        Case Else 'DDU_NET_ENVIRONMENT, DDU_JAVA_ENVIRONMENT and others
+            Dim row, column
+            Dim index, valuesLength 
+            Dim value, cellText
+            Dim totalCol, totalRow
+    
+            On Error Resume Next
+            'Verify if array columns and values has the same length
+            If Not (UBound(columns) = UBound(values)) Then
+                SAFSDebug "The length of columns array doesn't equal that of values array.", DEBUG_ERROR
+                findMatchRow = -1
+                Exit Function    
+            End If
+    
+            'convert array columns: if this array contains column label, find the index of that label
+            'and store that column index in the array
+            For index = 0 To UBound(columns)     
+                columns(index) = DataGrid.getColumnNumber(grid, columns(index), ignoreCase, contains, False)        
+
+                If columns(index) = -1 Then
+                    findMatchRow = -2
+                    Exit Function           
+                End If
+            Next
+    
+            'Try each row to match (columns, values)
+            valuesLength = UBound(values)
+            totalCol = DataGrid.GetColumnCount(grid)
+            totalRow = DataGrid.GetRowCount(grid)
+
+            For row = 1 To totalRow
+                If valuesLength <= totalCol Then
+                    'Inner For
+                    For index = 0 To valuesLength
+                        column = columns(index)
+                        value = values(index)
+                
+                        cellText = DataGrid.getCellItemValue(grid, row, column)
+                        If Not StringMatch(cellText, value,ignoreCase, contains) Then
+                            'Exit the inner for loop, try to mathc the next row
+                            Exit For'Inner For
+                        Else
+                            'If the last value match with the cell value, this means
+                            'we find the matched row
+                            If index = valuesLength Then
+                                findMatchRow = row
+                                modelRowNumber = findMatchRow
+                                SAFSDebug "Found the matched row: RowNumber=" & CStr(findMatchRow), DEBUG_INFO                            
+                                Exit Function
+                            End If                
+                        End If                              
+                    Next 
+                End If
+            Next
+
+            SAFSDebug "Can't find matched row", DEBUG_INFO
+            findMatchRow = -2
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Click/DoubleClick/RightClick datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The ListBaseContentHolder object of Flex DataGrid object
+'#      rowNo   Integer, The row number, 1 based index
+'#      colNo   Integer, The column number, 1 based index
+'#      doubleClick     If true, double click cell. Otherwise, click cell.
+'#      rightClick      If true, right click cell; Otherwise, left click.
+'#      keys            TShiftKey
+'#                      TShiftKey is an enumerated type that indicates whether 
+'#                      the SHIFT, CTRL or ALT key is pressed while executing a Click, DblClick
+'#                      TShiftKey defines the following constants for shift keys:
+'#
+'#                      Constant  Description  
+'#                      skShift   The SHIFT key is pressed.  
+'#                      skAlt     The ALT key is pressed.  
+'#                      skCtrl    The CTRL key is pressed.  
+'#                      skNoShift Neither CTRL, SHIFT nor ALT pressed.
+'# 
+'#                      TShiftKey values are additive. To specify that several keys are pressed at once, 
+'#                      combine the needed constants using the bitwise logical OR operator. For example:      
+'#                      Call MyObject.Click (10, 10, skCtrl Or skShift)
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      0       Success
+'#      -1      Can't get the cell Item
+'#              other error code from Err.Number
+'# Orig Author: Lei Wang
+'# History:
+'#      JUL 13, 2012    Original Release
+'############################################################################
+Function clickDataGridCellItem(grid, rowNo, colNo, doubleClick, rightClick, keys)
+    On Error Resume Next
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            clickDataGridCellItem = FlexDataGrid.clickDataGridCellItem(grid, rowNo, colNo, doubleClick, rightClick, keys)
+        Case Else 'DDU_NET_ENVIRONMENT, DDU_JAVA_ENVIRONMENT and other domains
+            Dim columnText
+            Dim row, column
+
+            row = rowNo - 1
+            column = colNo - 1
+    
+            'get column header's text for a certain column
+            columnText = DataGrid.GetColumnHeader(grid, column, False)
+            If columnText="" Then
+                clickDataGridCellItem = -1
+                SAFSDebug "Can't get column header for column " & CStr(colNo), DEBUG_ERROR
+                Exit Function
+            End If
+    
+            Err.Clear
+            If doubleClick Then
+                If rightClick Then
+                    grid.DblClickCellR row, columnText, keys
+                Else
+                    grid.DblClickCell row, columnText, keys 
+                End If    
+            Else
+                If rightClick Then
+                    grid.ClickCellR row, columnText, keys
+                Else
+                    grid.ClickCell row, columnText, keys 
+                End If
+            End If
+
+            If Err.Number <> 0 Then
+                SAFSDebug "During click cell(" & CStr(rowNo) & "," & CStr(colNo) & "), Met Error: " & Err.Number, DEBUG_WARN 
+            End If
+    
+            clickDataGridCellItem = Err.Number
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      get the text of 'column header' according to column index
+'#      For now, this method is NOT called for Flex domain
+'# PARAMETERS:
+'#      table               The DataGrid object
+'#      colIdx              The column index, 0-based
+'#      getRenderValue      The boolean, get the render value or model value.
+'#                          'model value' for click. Only used for Java domain.
+'# RETURNS:
+'#      String, the text of 'column header' according to column index
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      AUG 21, 2013    Original Release
+'############################################################################
+Function GetColumnHeader(table, colIdx, getRenderValue)
+    On Error Resume Next
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            GetColumnHeader = FlexDataGrid.GetColumnHeader(table, colIdx, getRenderValue)                                        
+        Case Else 'DDU_NET_ENVIRONMENT DDU_JAVA_ENVIRONMENT and others
+            Dim value, columModel, column
+            Dim  tmpcolIdx
+    
+            If StringEqualIgnoreCase(otrd.environment, DDU_JAVA_ENVIRONMENT) Then
+                'For Java application, wColumn doesn't give the correct render value of Column
+                If getRenderValue Then
+                    Set columModel = table.getColumnModel()
+                    If Err.Number=0 and IsObject(columModel) Then
+                      Set column = columModel.getColumn(colIdx)
+                      If Err.Number=0 and IsObject(column) Then
+                        'TODO If getHeaderValue() doesn't return String???
+                        value = column.getHeaderValue()
+                      End If
+                    End If        
+                End If
+            End If
+    
+            if Err.Number <> 0 or isEmpty(value) or isNull(value) then 
+                Err.Clear
+                value = table.wColumn(colIdx)
+                if Err.Number <> 0 or isEmpty(value) or isNull(value) then 
+                    Err.Clear
+                    value = table.Columns.Item(colIdx).HeaderText
+                    if Err.Number <> 0 or isEmpty(value) or isNull(value) then
+                        Err.Clear
+                        'TODO, if row header has more than one column
+                        if DataGrid.hasRowHeader(table) then
+                            tmpcolIdx = colIdx + 1
+                        else
+                            tmpcolIdx = colIdx 
+                        end if 
+                        value = table.Item(0, tmpcolIdx).CellValue
+                        if Err.Number <> 0 or isEmpty(value) or isNull(value) then   
+                            SAFSDebug " GetColumnHeader failture, need to find another way out", DEBUG_INFO
+                        end if                
+                    end if  
+                end if
+            end if  
+            GetColumnHeader = value
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      get the total number of rows in a table
+'# PARAMETERS:
+'#      grid                The DataGrid object
+'# RETURNS:
+'#      Integer, the total row number of a table
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      AUG 21, 2013    Original Release
+'############################################################################
+Function GetRowCount(grid)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            GetRowCount = FlexDataGrid.GetRowCount(grid)
+        Case DDU_JAVA_ENVIRONMENT
+            GetRowCount = JavaDataGrid.GetRowCount(grid)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            GetRowCount = NetDataGrid.GetRowCount(grid)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      get the total number of columns in a table
+'# PARAMETERS:
+'#      grid                The DataGrid object
+'# RETURNS:
+'#      Integer, the total column number of a table
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      AUG 21, 2013    Original Release
+'############################################################################
+Function GetColumnCount(grid)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            GetColumnCount = FlexDataGrid.GetColumnCount(grid)
+        Case DDU_JAVA_ENVIRONMENT
+            GetColumnCount = JavaDataGrid.GetColumnCount(grid)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            GetColumnCount = NetDataGrid.GetColumnCount(grid)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get the value of datagrid's cell(rowNo, colNo)
+'# PARAMETERS:
+'#      grid    The Flex DataGrid object
+'#      rowNo   Integer, The row number of the current table render, 1 based index
+'#      colNo   Integer, The column number of the current table render, 1 based index
+'# RETURNS:
+'#      The value of datagrid's cell object
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      OCT 24, 2011    Original Release
+'############################################################################
+Function getCellItemValue(grid, rowNo, colNo)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            getCellItemValue = FlexDataGrid.getCellItemValue(grid, rowNo, colNo)
+        Case DDU_JAVA_ENVIRONMENT
+            getCellItemValue = JavaDataGrid.getCellItemValue(grid, rowNo, colNo)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            getCellItemValue = NetDataGrid.getCellItemValue(grid, rowNo, colNo)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      get the column object in a table according to the index
+'# PARAMETERS:
+'#      grid                The DataGrid object
+'#      columnNumber        The index, 0-based
+'# RETURNS:
+'#      Object, the column object
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      AUG 21, 2013    Original Release
+'############################################################################
+Function GetColumnObject(grid, columnNumber)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            Set GetColumnObject = FlexDataGrid.GetColumnObject(grid, columnNumber)
+        Case DDU_JAVA_ENVIRONMENT
+            Set GetColumnObject = JavaDataGrid.GetColumnObject(grid, columnNumber)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            Set GetColumnObject = NetDataGrid.GetColumnObject(grid, columnNumber)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Get an 2-dimensions array of datagrid's cell value, the range is
+'#      limited by parameters: row, column, rows, columns
+'# PARAMETERS:
+'#      grid    In      The Flex DataGrid object
+'#      row     In      The row number from where to begin to capture, 1-based index
+'#      column  In      The column number from where to begin to capture, 1-based index
+'#      rows    In      The number of rows to read from the begin row
+'#      columns In      The number of column to read from the begin column
+'#      data    Out     The 2-dimension array to contain the datagrid's cell values
+'# RETURNS:
+'#      0,      Success
+'#      Not 0,  Fail
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      JUL 13, 2012    Original Release
+'############################################################################
+Function getDataGridCellRange(grid, row, column, rows, columns, data)
+    On Error Resume Next
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+             getDataGridCellRange = FlexDataGrid.getDataGridCellRange(grid, row, column, rows, columns, data)                                          
+        Case Else 'DDU_NET_ENVIRONMENT, DDU_JAVA_ENVIRONMENT and other domains
+            Dim totalRow, totalColumn
+            Dim i, j
+
+            If row<1 or column<1 Then
+                SAFSDebug "The row and column should not be smaller than 1.", DEBUG_ERROR
+                getDataGridCellRange = -1
+                Exit Function
+            End If
+    
+            totalRow = DataGrid.GetRowCount(grid)
+            totalColumn = DataGrid.GetColumnCount(grid)
+    
+            If (row+rows-1>totalRow) Or (column+columns-1>totalColumn) Then
+                SAFSDebug "The range is out of the whole table content.", DEBUG_ERROR
+                getDataGridCellRange = -2
+                Exit Function    
+            End If
+
+            Redim data(rows-1,columns-1)
+            For i=0 To rows-1
+                For j=0 To columns-1
+                    data(i,j) =  DataGrid.getCellItemValue(grid,row+i, column+j)
+                Next    
+            Next    
+        
+            getDataGridCellRange = 0
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Retrieve the data of the whole table
+'# PARAMETERS:
+'#      table           (in) The DataGrid object
+'#      itemArray       (out) array, one-dimension array containing object's data
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      Boolean True if success; False otherwise
+'# History:
+'#      AUG 23, 2013    Original Release
+'#      JUL 10, 2014    Lei Wang  Change return type from int to boolean;
+'#                              Make sure that the parameter 'itemArray' will take back 1-Dimension array.
+'############################################################################
+Function GetObjectData(table, ByRef itemArray()) 
+    On Error Resume Next
+    Dim rc
+    Select Case otrd.environment          
+        Case DDU_NET_ENVIRONMENT
+            rc = NetDataGrid.GetObjectData(table, itemArray)
+            GetObjectData = (rc=0)
+        Case Else 'DDU_FLEX_ENVIRONMENT, DDU_JAVA_ENVIRONMENT and others
+            Dim rows, columns, content
+            rows = DataGrid.GetRowCount(table)
+            columns = DataGrid.GetColumnCount(table)
+            'Get 2-Dimensions array
+            rc = DataGrid.getDataGridCellRange(table, 1, 1, rows, columns, content)
+            If rc=0 Then
+                GetObjectData = DataGrid.Convert2DimensionArray(content, itemArray)
+            Else
+                GetObjectData = False
+            End If
+    End Select
+
+    If Not GetObjectData Then
+        SAFSDebug "Met some errors during capturing data!", DEBUG_WARN
+    End If
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Decide if cell(rowNumber, columnNumber) is editable
+'# PARAMETERS:
+'#      grid            The DataGrid object
+'#      rowNumber       The row number, 1-based
+'#      columnNumber    The column number, 1-based
+'# RETURNS:
+'#      Boolean
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      AUG 21, 2013    Original Release
+'############################################################################
+Function isCellEditable(grid, rowNumber, columnNumber)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            isCellEditable = FlexDataGrid.isCellEditable(grid, rowNumber, columnNumber)
+        Case DDU_JAVA_ENVIRONMENT
+            isCellEditable = JavaDataGrid.isCellEditable(grid, rowNumber, columnNumber)                                          
+        Case Else 'DDU_NET_ENVIRONMENT and others
+            isCellEditable = NetDataGrid.isCellEditable(grid, rowNumber, columnNumber)
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Decide if column (DataGridColumn object) is editable
+'# PARAMETERS:
+'#      grid            The DataGrid object
+'#      columnNumber    The column number, 1-based
+'# RETURNS:
+'#      Boolean
+'# ERRORS:
+'#       none
+'# Orig Author: Lei Wang
+'# History:
+'#      NOV 11, 2011    Original Release
+'############################################################################
+Function isColumnEditable(grid, columnNumber)
+    Dim columnCount
+    Dim column
+    Dim rc, editable
+    Dim editableProperty
+    
+    On Error Resume Next 
+    columnCount = GetColumnCount(grid)
+    
+    If columnNumber < 1 or columnNumber > columnCount Then
+        SAFSDebug "column("&CStr(columnNumber)&") doesn't exist!!!", DEBUG_WARN
+        isColumnEditable = False
+        Exit Function
+    Else
+        Set column = GetColumnObject(grid, columnNumber-1)
+    End If
+    
+    'Get property 'editable' of Flex DataGridColumn object
+    'Get property 'ReadOnly' of Net GridColumn object
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            editableProperty = PROPERTY_EDITABLE
+            rc = DDGGetGUIPropertyString (column, editableProperty, editable)
+        Case Else 'DDU_NET_ENVIRONMENT, DDU_JAVA_ENVIRONMENT and others
+            editableProperty = PROPERTY_READONLY
+            rc = DDGGetGUIPropertyString (column, editableProperty, editable)
+            editable = Not editable
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select    
+    
+    If rc = 0 Then
+        isColumnEditable = editable
+    Else
+        SAFSDebug "Can't get property '"&editableProperty&"', Met Error: " & Err.Number, DEBUG_WARN
+        isColumnEditable = False
+    End If
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Click/DoubleClick/RightClick datagrid's header(colNo)
+'# PARAMETERS:
+'#      grid            The DataGrid object
+'#      colNo           Integer, The column number, 1 based index
+'#      doubleClick     If true, double click. Otherwise, single click.
+'#      rightClick      If true, right click; Otherwise, left click.
+'#      keys            TShiftKey
+'#                      TShiftKey is an enumerated type that indicates whether 
+'#                      the SHIFT, CTRL or ALT key is pressed while executing a Click, DblClick
+'#                      TShiftKey defines the following constants for shift keys:
+'#
+'#                      Constant  Description  
+'#                      skShift   The SHIFT key is pressed.  
+'#                      skAlt     The ALT key is pressed.  
+'#                      skCtrl    The CTRL key is pressed.  
+'#                      skNoShift Neither CTRL, SHIFT nor ALT pressed.
+'# 
+'#                      TShiftKey values are additive. To specify that several keys are pressed at once, 
+'#                      combine the needed constants using the bitwise logical OR operator. For example:      
+'#                      Call MyObject.Click (10, 10, skCtrl Or skShift)
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      0       Success
+'#      -1      The header Item's index is wrong
+'#      -2      Can't get the Column Header
+'#              other error code from Err.Number
+'# History:
+'#      JUL 13, 2012    (Lei Wang) Original Release
+'############################################################################
+Function clickHeader(grid,colNo, doubleClick, rightClick, keys)
+    Select Case otrd.environment          
+        Case DDU_FLEX_ENVIRONMENT
+            clickHeader = FlexDataGrid.clickHeader(grid,colNo, doubleClick, rightClick, keys)                                         
+        Case Else 'DDU_NET_ENVIRONMENT, DDU_JAVA_ENVIRONMENT and others
+            Dim columnText
+  
+            On Error Resume Next
+    
+            If colNo<1 Or colNo>grid.wColumnCount Then
+                clickHeader = -1
+                SAFSDebug "The column number: " & CStr(colNo) & _
+                          " exceeds the max column count: " & CStr(grid.wColumnCount) & _
+                          "; Or it is smaller than 1.", DEBUG_ERROR
+                Exit Function    
+            End If
+    
+            'get column header's text for a certain column
+            columnText = DataGrid.GetColumnHeader(grid, colNo-1, False)
+            If columnText="" Then
+                clickHeader = -2
+                SAFSDebug "Can't get column header for column " & CStr(colNo), DEBUG_ERROR
+                Exit Function
+            End If    
+    
+            Err.Clear
+            If doubleClick Then
+                If rightClick Then
+                    grid.DblClickColumnHeaderR columnText, keys
+                Else
+                    grid.DblClickColumnHeader columnText, keys
+                End If    
+            Else
+                If rightClick Then
+                    grid.ClickColumnHeaderR columnText, keys
+                Else
+                    grid.ClickColumnHeader columnText, keys 
+                End If
+            End If
+
+            If Err.Number <> 0 Then
+                SAFSDebug "During click header(" & CStr(colNo) & ") Met Error: " & Err.Number, DEBUG_WARN 
+            End If
+    
+            clickHeader = Err.Number
+        
+            SAFSDebug "Process datagrid of '"&otrd.environment&"' application" &_ 
+                      "in generic function. New implementation maybe needed.", DEBUG_WARN
+    End Select
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Convert 2-dimension array to 1-dimension array
+'# PARAMETERS:
+'#      twoDimensionArray         Array, 2 dimensions
+'#      oneDimensionArray         Array, 1 dimension
+'# ERRORS:
+'#       none
+'# RETURNS:
+'#      True       Success
+'#      False      Fail
+'# History:
+'#      SEP 27, 2013    Original Release
+'#      JUL 09, 2014    (Carl Nagle) Fixed to handle 1D arrays that might be passed 
+'#                               as 2D arrays. 
+'############################################################################
+Function Convert2DimensionArray(twoDimensionArray, ByRef oneDimensionArray()) 
+    On Error Resume Next
+    
+    'convert 2-dimension array to 1-dimension array
+    Redim oneDimensionArray(Ubound(twoDimensionArray,1))
+    Dim i, j, temp, utest, is2D
+
+    Err.Clear
+    utest = Ubound(twoDimensionArray,2)
+    'might not be a 2D array!
+    if Err.Number = 9 then        
+        SAFSDebug "Met error '"& Err.Number &": "& Err.Description &"' while converting array!  Assuming 1D Array.", DEBUG_WARN
+        Err.Clear
+        is2D = False
+    else
+        is2D = True
+    end if        
+    For i = 0 To Ubound(twoDimensionArray,1)
+        if is2D then        
+            temp = ""
+            For j = 0 To utest
+                temp = temp & vbTab & twoDimensionArray(i,j)
+            Next
+        else
+            temp = twoDimensionArray(i)
+        end if
+        oneDimensionArray(i) = temp
+    Next   
+    
+    If Err.Number <> 0 Then
+        SAFSDebug "Met error '"& Err.Number &": "& Err.Description &"' while converting 2D array!", DEBUG_WARN
+        Convert2DimensionArray = False
+    Else
+        Convert2DimensionArray = True
+    End If
+    
+End Function
+
+'############################################################################
+'#
+'#   Sub DataGridMain ()
+'#
+'# DESCRIPTION:
+'#
+'#      Entry point to process a StepDriver ACTION COMMAND on a DataGrid.
+'#      The routine merely reads the Global otrd.testcommand and 
+'#      calls the appropriate subroutine to process it.  
+'#
+'#      If the testcommand is unrecognized it will log a WARNING_MESSAGE and
+'#      exit with a WARNING status.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: OCT 13, 2011
+'# History:
+'#
+'#      OCT 13, 2011    Original Release
+'#      JUl 03, 2014    (Carl Nagle) Support CaptureObjectDataToFile
+'#
+'############################################################################
+Sub DataGridMain()
+    On Error Resume Next
+    SAFSDebug "Process datagrid of '"&otrd.environment&"' application.", DEBUG_INFO
+
+    Select Case UCase(otrd.testcommand)
+            
+        Case "ACTIVATECELL"
+                
+            DoClickCell True, False, skNoShift
+
+        Case "CLICKCELL"
+                
+            DoClickCell False, False, skNoShift
+                
+        Case "DOUBLECLICKCELL"
+                
+            DoClickCell True, False, skNoShift
+
+        Case "RIGHTCLICKCELL"
+                
+            DoClickCell False, True, skNoShift
+                                
+        Case "SELECTCELL"
+                
+            DoClickCell False, False, skNoShift
+                
+        Case "ACTIVATECOLUMNLABEL"
+            
+            DoClickHeader True, False, skNoShift
+            
+        Case "CLICKCOLUMNLABEL"
+            
+            DoClickHeader False, False, skNoShift
+            
+        Case "DOUBLECLICKCOLUMNLABEL"
+            
+            DoClickHeader True, False, skNoShift
+            
+        Case "RIGHTCLICKCOLUMNLABEL"
+            
+            DoClickHeader False, True, skNoShift
+            
+        Case "VERIFYCOLUMNLABEL"                
+                
+            DoVerifyHeader
+                
+        Case "ASSIGNCELLCONTAINSTEXTROW"
+            
+            DoAssignCellTextFind True                               
+
+        Case "ASSIGNCELLTEXTROW"
+            
+            DoAssignCellTextFind False                
+
+        Case "SELECTCELLCONTAINSTEXTFIND"
+            
+            DoSelectCellTextFind True                 
+                
+        Case "SELECTFUZZYCELLTEXTFIND"
+            
+            DoSelectCellTextFind True
+                
+        Case "SELECTCELLTEXTFIND"
+            
+            DoSelectCellTextFind False                                 
+
+        Case "VERIFYFUZZYCELLTEXTFIND"
+            
+            DoVerifyCellTextFind True
+                
+        Case "VERIFYCELLTEXTFIND"
+            
+            DoVerifyCellTextFind False
+                
+        Case "ASSIGNVARIABLEFUZZYCELLTEXT"
+            
+            DoAssignCellText True
+                
+        Case "ASSIGNVARIABLECELLTEXT"
+            
+            DoAssignCellText False                
+
+        Case "SELECTFUZZYCELLTEXT"
+            
+            DoSelectCellText True
+                
+        Case "SELECTCELLTEXT"
+            
+            DoSelectCellText False 
+
+        Case "VERIFYCELLTEXT"
+            
+            DoVerifyCellText False, False
+                
+        Case "VERIFYCELLTEXTCONTAINS"
+            
+            DoVerifyCellText False, True                
+
+        Case "VERIFYFUZZYCELLTEXT"
+            
+            DoVerifyCellText True, False
+                
+        Case "VERIFYFUZZYCELLTEXTCONTAINS"
+            
+            DoVerifyCellText True, True                 
+            
+        Case "CAPTUREFUZZYRANGETOFILE"    
+                
+            DoCaptureTableRangeToFile True                                                                                                                                            
+
+        Case "CAPTURERANGETOFILE"    
+                
+            DoCaptureTableRangeToFile False 
+
+        Case "SELECTCELLTEXTSPECIAL"    
+                
+            DoSelectCellTextSpecial                
+
+        Case "VERIFYCELLEDITABLE"    
+                
+            DoVerifyCellEditable 
+                                                                                
+        Case Else
+            
+            HandleGenericCommand
+            
+    End Select
+End Sub

@@ -1,0 +1,499 @@
+﻿OPTION EXPLICIT
+
+'##############################################################################
+'#
+'#    STAFUtilities.SBL  SOURCECODE
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'# Provides general-purpose routines for using STAF and SAFS services associated 
+'# with STAF.
+'#
+'# For more information on STAF:  http://staf.sourceforge.net
+'#
+'# The STAF User's Guide is where you can found information on the particular 
+'# services such as QUEUES and EVENTS allowed by this library:
+'#
+'#     http://staf.sourceforge.net/current/STAFUG.htm
+'#
+'##############################################################################
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT LogUtilities_X
+'USEUNIT StepDriver_X
+
+'# PRIVATE DEPENDENCIES
+
+'# FORWARD DECLARATIONS
+
+'############################################################################
+'#
+'# Sub InitSTAFClientInterface (clientname)
+'#
+'# Creates instances of otrd, ostaf, and oresult and records STAF handleid of 
+'# the newly created client. 
+'############################################################################
+Sub InitSTAFClientInterface (clientname)
+    Dim status, oresult
+    If Not IsObject(ostaf) then
+      Set ostaf = CreateObject("DDVariableStore.STAFUtilities")
+      Set otrd  = CreateObject("DDVariableStore.TestRecordData")
+      Set oresult = CreateObject("DDVariableStore.STAFResult")
+      If (Not isObject(ostaf)) then
+           Log.Message("Exiting: STAF COM interface is not available.")
+           Runner.Stop()
+      End If
+  
+      otrd.setSTAFHelper (ostaf)
+      if clientname = "" then clientname = DEFAULT_TC_CLIENT
+      status = ostaf.registerNewProcess(clientname)
+    
+      If status <> 0 then
+           Log.Message("Exiting: STAF RC: "& status &" STAF registration error.")
+           Runner.Stop()
+      End If  
+      handleid = ostaf.getHandleID() 
+    End if
+    Set oresult = Nothing
+End Sub
+
+
+'############################################################################
+'#
+'#  Function sendQueueMessage(toolname, message)
+'#
+'# DESCRIPTION:
+'#
+'#  Send a STAF QUEUE message to a registered tool.  Not all tools attempt 
+'#  to process QUEUE messages.  Make sure the tool of interest is designed 
+'#  to process messages in its QUEUE.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      toolname    The process name of the tool to receive the queued message.
+'#
+'#      message     The message to queue to the tool.
+'#
+'# RETURNS:
+'#
+'#      The STAF return code
+'#
+'############################################################################
+Function sendQueueMessage(toolname, message)
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    sendQueueMessage = ostaf.sendQueueMessage(toolname, message)
+End Function
+
+'############################################################################
+'#
+'#  Function STAFpulseEvent(event)
+'#
+'# DESCRIPTION:
+'#
+'#  PULSE a single STAF SEMaphore EVENT
+'#
+'# PARAMETERS:
+'#
+'#  event       the name of the event
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function STAFpulseEvent(myevent)
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    STAFpulseEvent = ostaf.pulseEvent(myevent)    
+End Function
+
+    
+'############################################################################
+'#
+'#  Function STAFpostEvent(event)
+'#
+'# DESCRIPTION:
+'#
+'#  POST a single STAF SEMaphore EVENT
+'#
+'#
+'# PARAMETERS:
+'#
+
+'#  event       the name of the event
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function STAFpostEvent(myevent)    
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    STAFpostEvent = ostaf.postEvent(myevent)
+End Function
+
+    
+'############################################################################
+'#
+'#  Function STAFwaitEvent(event, delayseconds) as Long
+'#
+'# DESCRIPTION:
+'#
+'#  WAIT for a single STAF SEMaphore EVENT
+'#
+'#
+'# PARAMETERS:
+'#
+'#  event       the name of the event
+'#
+'#  delaySeconds  the number of seconds to wait ( < 0 = wait indefinitely)
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function STAFwaitEvent(myevent, delaySeconds)    
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    STAFwaitEvent = ostaf.waitEvent(myevent, delaySeconds)    
+End Function
+
+
+'############################################################################
+'#
+'#  Function getSAFSVariable(varname, rvalue)
+'#
+'# DESCRIPTION:
+'#
+'#  Get the value of a SAFSVARS variable.
+'#
+'#
+'# PARAMETERS:
+'#
+'#  varname     the name of the variable
+'#
+'#  rvalue      Variant to receive the STAF value
+'#
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function  getSAFSVariable(varName, ByRef result)
+    If (Not isObject(ostaf)) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    Dim oresponse
+    Set oresponse = CreateObject("DDVariableStore.STAFResult")
+    getSAFSVariable = ostaf.getVariable(varName, oresponse)
+    result = oresponse.result  
+    Set oresponse = Nothing  
+End Function
+
+
+'############################################################################
+'#
+'#  Function setSAFSVariable(varname, varvalue)
+'#
+'# DESCRIPTION:
+'#
+'#  Set the value of a SAFSVARS variable.
+'#
+'#
+'# PARAMETERS:
+'#
+'#  varname     the name of the variable
+'#
+'#  varvalue    the value to assign the variable
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function setSAFSVariable(varName, varValue)
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    setSAFSVariable = ostaf.setVariable(varName, varValue)  
+End Function
+
+
+'############################################################################
+'#
+'#  Function clearAllSAFSVariables()
+'#
+'# DESCRIPTION:
+'#
+'#  Reset all SAFS Variables
+'#  This clears out EVERYTHING.  So it is NOT recommended for use.
+'#
+'# PARAMETERS:
+'#
+'#   None
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function clearAllSAFSVariables()
+    Dim oResult, oVars
+    Set oResult = CreateObject("DDVariableStore.STAFResult")
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    clearAllSAFSVariables = ostaf.submitSTAFVariantRequest("local", "safsvars", "reset" ,oResult)  
+End Function
+
+
+'############################################################################
+'#
+'#  Function clearSAFSArrayVariable()
+'#
+'# DESCRIPTION:
+'#
+'#  DELETE all SAFS Variables beginning with a specific prefix.
+'#  These types of variables are typically used to act as pseudo Arrays.
+'#
+'# PARAMETERS:
+'#
+'#   Prefix - the SAFS Variable Prefix to use with the SAFSVARS DELETE command.
+'#
+'# RETURNS:
+'#
+'#  The number of variables deleted, or 0.
+'#
+'############################################################################
+Function clearSAFSArrayVariable(prefix)
+    Dim oResult, count, arc
+    On Error Resume Next
+    Set oResult = CreateObject("DDVariableStore.STAFResult")
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    count = 0
+    'arc = ostaf.submitSTAFRequest("local", "safsvars", "list" ,oResult)
+    arc = ostaf.submitSTAFVariantRequest("local", "safsvars", "list" ,oResult)
+    if arc = 0 then
+        '// TODO: Parse the oResult.result to get all key/value pairs
+    end if    
+    clearSAFSArrayVariable = count  
+End Function
+
+
+'############################################################################
+'#
+'#  Function getSAFSAppMapItem(appMapID, section, item, result)
+'#
+'# DESCRIPTION:
+'#
+'#  Get the value of an item resolved by SAFSMAPS 
+'#
+'#
+'# PARAMETERS:
+'#
+'#  appMapId    the name/id of the app map to reference.  "" for Default.
+'#
+'#  section     the name/id of the section in app map to reference.  "" for Default
+'#
+'#  item        the name/id of the item in section to get.
+'#
+'#  result      Variant to receive the retrieved value
+'#
+'# RETURNS:
+'#
+'#  STAF return code
+'#
+'############################################################################
+Function  getSAFSAppMapItem(appMapId, section, item, ByRef result)
+    If Not isObject(ostaf) Then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    Dim oresponse
+    Set oresponse = CreateObject("DDVariableStore.STAFResult")
+    getSAFSAppMapItem = ostaf.getAppMapItem(appMapId, section, item, oresponse)
+    result = oresponse.result
+    Set oresponse = Nothing  
+End Function
+
+
+'############################################################################
+'#
+'#  Function SAFSLOGMessage (msgText, msgType, msgDescription, statusinfo)
+'#
+'# DESCRIPTION:
+'#
+'#      Logs messages to SAFS log id in the otrd.Fac
+'#
+'# PARAMETERS:
+'#      
+'#      msgText     string text of message to send to the LogFacility
+'#      msgType     optional integer of type of message we are logging.
+'#                  (see <a href="#constants">CONSTANTS</a> MessageType identifiers)
+'#                  if none is provided then a GENERIC_MESSAGE is sent.
+'#      msgDescription  optional additional descriptive text for message.
+'#      statusinf   returned from the SAFSLOGS service containing info like:
+'#                      CONSOLELOG=TRUE
+'#                      TOOLLOG=TRUE
+'#                      LOGLEVEL=N
+'#
+'############################################################################
+Function SAFSLOGMessage(msgText, msgType, msgDescription, ByRef statusinfo)
+    Dim theType
+    Dim theDesc
+    Dim oresponse
+ 
+    On Error Resume next
+    if Not IsObject(ostaf) then InitSTAFClientInterface DEFAULT_TC_CLIENT   
+    Set oresponse = CreateObject("DDVariableStore.STAFResult")
+    
+    theType = 0 'GENERIC_MESSAGE
+    if IsMissing(msgType) = False then 
+        theType = msgType
+    end if
+    
+    theDesc = ""
+    if IsMissing(msgDescription) = False then 
+        theDesc = msgDescription
+    end if
+
+    with otrd
+    
+        Select Case theType
+        'Although initially all algorithms for type specific messages appear to be 
+        'identical and could be a single algorithm with input parameters they are 
+        'intentionally left separate here to allow future modification with larger
+        'differentiations.  This will require much less effort at that time (I hope).
+    
+            CASE GENERIC_MESSAGE
+        
+                SAFSLOGMessage = ostaf.logGenericMessage(.Fac, msgText, theDesc, oresponse)
+        
+            CASE START_PROCEDURE
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE END_PROCEDURE 
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE START_DATATABLE
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE END_DATATABLE
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE START_TESTCASE
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE END_TESTCASE
+          
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE START_LOGGING 
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE STOP_LOGGING
+          
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE START_REQUIREMENT 
+        
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE END_REQUIREMENT
+          
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE SKIPPED_TEST_MESSAGE
+          
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)
+
+            CASE FAILED_MESSAGE
+        
+                SAFSLOGMessage = ostaf.logFailedMessage(.Fac, msgText, theDesc, oresponse)
+
+            CASE PASSED_MESSAGE
+                    
+                SAFSLOGMessage = ostaf.logPassedMessage(.Fac, msgText, theDesc, oresponse)
+                
+            CASE WARNING_MESSAGE
+                     
+                SAFSLOGMessage = ostaf.logWarningMessage(.Fac, msgText, theDesc, oresponse)
+                
+            CASE ELSE
+                    
+                SAFSLOGMessage = ostaf.logMessage(.Fac, msgText, theDesc, theType, oresponse)            
+        End Select    
+    end With
+    statusinfo = oresponse.result
+    Set oresponse = Nothing
+    
+End Function
+
+'############################################################################
+'#
+'#  Sub SAFSDebugMessage(message, level)
+'#
+'# DESCRIPTION:
+'#
+'#      Writes a message to the SAFS Debug Log (if running)
+'#
+'# PARAMETERS:
+'#
+'#      message  Message to write
+'#      level    level of message.  
+'#               Valid levels are:
+'#               DEBUG_DEBUG   (0)
+'#               DEBUG_INFO    (1)
+'#               DEBUG_INDEX   (2)
+'#               DEBUG_GENERIC (3)
+'#               DEBUG_PASS    (4)
+'#               DEBUG_WARN    (5)
+'#               DEBUG_ERROR   (6)
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: Carl Nagle
+'# Orig   Date: JUN 30, 2010
+'# History:
+'#
+'#      JUN 30, 2010    Original Release
+'#
+'############################################################################
+Sub SAFSDebugMessage(message, level)
+
+    if Not IsObject(ostaf) then InitSTAFClientInterface DEFAULT_TC_CLIENT
+    Dim newtext, prefix, currtime, displaytime
+    On Error Resume Next
+    currtime = Time()
+    displaytime = FormatDateTime(currtime,4) &":"& CStr(Second(currtime)) &".mmm"
+    message = ":SAFS/TCAFS: "& message &" ]"
+    Select Case level
+        CASE DEBUG_DEBUG
+            prefix = "[DEBUG "& displaytime
+        CASE DEBUG_INFO
+            prefix = "[INFO "& displaytime
+        CASE DEBUG_INDEX
+            prefix = "[INDEX "& displaytime
+        CASE DEBUG_GENERIC
+            prefix = "[GENERIC "& displaytime
+        CASE DEBUG_PASS
+            prefix = "[PASS "& displaytime
+        CASE DEBUG_WARN
+            prefix = "[WARN "& displaytime
+        CASE DEBUG_ERROR        
+            prefix = "[ERROR "& displaytime
+        CASE Else
+            prefix = "[???? "& displaytime
+    End Select
+    message = prefix & message
+    
+    If (LogDebugMessageToTool) Then
+        Log.Message message
+    End If
+    
+    newtext = level &"|"& message
+    sendQueueMessage DEBUG_QUEUE, newtext
+    
+End Sub
+
+

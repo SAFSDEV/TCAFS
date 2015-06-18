@@ -1,0 +1,571 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    EDITBOXFUNCTIONS.REC  SCRIPT
+'#  
+'#XML:<?xml version="1.0"?>
+'#XML:<!DOCTYPE keyword_library SYSTEM "keyword_library.dtd">
+'#XML:<keyword_library>
+'#XML:
+'#XML:    <libraryType        type="COMPONENT" />
+'#XML:
+'#XML:    <libraryInfo        name="EditBoxFunctions" 
+'#XML:                         doc="EditBoxFunctions.htm" 
+'#XML:                  sourcecode="EditBoxFunctions.sbl" 
+'#XML:                       class="EDITBOX" >
+'#XML:
+'#XML:        <description>
+'#XML:           <short_desc> 
+'#XML:              Actions for working with EditBox objects
+'#XML:           </short_desc>
+'#XML:        </description>
+'#XML:
+'#XML:    </libraryInfo>
+'#XML:
+'#XML:    <runtime      platform="Windows" 
+'#XML:                    engine="Robot" 
+'#XML:                   version="2001" />
+'#XML:
+'#XML:    <keywords>
+'#                                                                        
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on SQA Type=EDITBOX objects in 
+'#      Data-Driven Automation.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#      SetTextValue            'set new text value, using InputKeys special characters
+'#      SetTextCharacters       'set and verify new text value using literal text
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#      SEP 05, 2011    (JunwuMa) Update GetCurrentEditBoxText to support Flex for TextArea and TextInput.
+'#      DEC 21, 2011    (JunwuMa) Update SetTextValue to support multi-lines Flex editbox; adding pause to solve
+'#                                SetTextValue occasionally ignoring part of input value or adding extra value.
+'#      APR 09, 2012    (Lei Wang)  Add method CleanAndSetText(): to clean text for different kinds of textbox. 
+'#
+'##############################################################################
+
+
+'# SCRIPT CONSTANTS
+
+' Valid TESTCOMMANDS 
+
+'# PUBLIC DEPENDENCIES
+
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT StepDriver_X
+'USEUNIT LogUtilities_X
+'USEUNIT DDUtilities_X
+
+'USEUNIT DDGUIUtilities
+'USEUNIT GenericObjectFunctions
+'USEUNIT GenericMasterFunctions
+'USEUNIT LogUtilities
+'USEUNIT StringUtilities
+
+'# FORWARD DECLARATIONS
+
+
+
+'fill the currvalue with the current text in the Editbox
+'returns SQA Object Scripting status codes (sqaSuccess etc.)
+Function GetCurrentEditBoxText (currvalue)
+
+    Dim status    
+
+    with otrd
+
+        'try a standard editbox 
+        if .environment = DDU_HTML_ENVIRONMENT then
+          if(aqString.ToLower(.compClass) = "textarea") then
+              status = DDGGetGUIPropertyString(.compGUIID, "value", currvalue)
+          else
+              status = DDGGetGUIPropertyString(.compGUIID, "Text", currvalue)
+          end if
+        else if .environment = DDU_FLEX_ENVIRONMENT then 'for Flex
+            status = DDGGetGUIPropertyString(.compGUIID, "Caption", currvalue)
+          else      
+            status = DDGGetGUIPropertyString(.compGUIID, "wText", currvalue)
+            if status <> 0 then status = DDGGetGUIPropertyString(.compGUIID, "Text", currvalue)
+          end if
+        end if
+        
+        'or try an HTML editbox
+        if status <> 0 then status = DDGGetGUIPropertyString(.compGUIID, "value", currvalue)
+        
+    End With
+    GetCurrentEditBoxText = status
+
+End Function
+
+
+'############################################################################
+'#
+'#   Sub SetTextValue ()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to set the text of the editbox.  This version allows the use 
+'#      of special character combinations and substrings to identify specific 
+'#      keyboard keys.  These are the same special characters and interpretation 
+'#      used for Robot's InputKeys command and the Windows Scripting Host.
+'#
+'#      ~^+%{( are primarily the characters that induce special processing.
+'#
+'#      The routine verifies we can read the text property, sets the text value 
+'#      and will verify that the property has been set to that value *IF* none 
+'#      of the special characters exist in the provided text value.  If those 
+'#      special characters exist, then no post-set verification will occur.
+'#
+'#      If you do not want to have any characters converted or interpretted as 
+'#      special characters then you need to use the SetTextCharacters command.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Text to send to editbox.  Quoted text may be used to ensure proper
+'#              expected value retrieval.
+'#              There is also no check for a missing field because that would be
+'#              the same as specifying no text ("")--which is valid.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub SetTextValue(mode)
+
+    Dim status
+    Dim currvalue
+    Dim tablevalue
+    Dim newvalue
+    
+    with otrd
+
+        .statuscode = SDGeneralScriptFailure
+        
+        .windowGUIID.Activate
+
+        if IsMissing(mode) then mode = 0
+                        
+        status = GetCurrentEditBoxText(currvalue)
+        'do not log a problem if the command is "unverified"-- mode=1
+        'html problem: status is generally always 0, even if a problem exists in getting the text.
+        if status <> 0 and mode = 0 then
+            LogMessage "EditBox "& .TestCommand &" in "& .WindowName &" warning "& _
+                       "in table "& .FileName &" at line "& _
+                       .LineNumber, WARNING_MESSAGE, _
+                       .WindowName &":"& .CompName & _
+                       " current text could not be retrieved. TestComplete Error"& CStr(status)
+            .StatusCode = SDScriptWarning
+            .StatusInfo = WARNING_MESSAGE
+        end if
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+
+        Log.Enabled = False
+
+        if .environment = DDU_HTML_ENVIRONMENT then _
+            .compGUIID.Click 4,4        
+        if(mode = 1) then
+           UnverifiedCleanAndSetText .compGUIID, tablevalue
+        else
+           CleanAndSetText .compGUIID, tablevalue
+        end if
+
+        Log.Enabled = True
+        
+        if mode = 1 Then
+            LogMessage .TestCommand &" """& tablevalue &""" sent to "& .CompName &".", GENERIC_MESSAGE, ""
+            .StatusCode = SDNoScriptFailure
+            .StatusInfo = ""
+            Exit Sub
+        End if    
+        
+        'if special chars detected then do not compare input text to current value
+        if (GetNextDelimiterIndex(tablevalue, 1, "~%^(+{") > 0) then
+            LogMessage .CompName &" "& .testcommand &" '"& tablevalue &"' set but verification not performed due to special characters.", GENERIC_MESSAGE, ""
+            .StatusCode = SDNoScriptFailure
+            .StatusInfo = ""
+            exit sub
+        end if
+        
+        status = GetCurrentEditBoxText(newvalue)
+        if status <> 0 then
+            LogMessage "EditBox "& .TestCommand &" in "& .WindowName & _
+                       " verification failed.  "& _
+                       "See table "& .FileName & " at line "& _
+                       .LineNumber, WARNING_MESSAGE, _
+                       .WindowName &":"& .CompName &" text could not be retrieved."
+            .StatusCode = SDScriptWarning
+            .StatusInfo = WARNING_MESSAGE
+        else
+            if StrComp(tablevalue, newvalue, 0) <> 0 then
+                LogMessage "EditBox "& .TestCommand &" in "& .WindowName & _
+                       " verification failed.  " & _
+                       "See table " & .FileName & " at line " & _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .WindowName &":"& .CompName &" Set to:"""& tablevalue & _
+                       """, but returns:"""& newvalue &"""."
+                .StatusCode = SDGeneralScriptFailure
+                .StatusInfo = FAILED_MESSAGE
+            else
+                LogMessage .CompName &" "& .TestCommand & _
+                           " to """& tablevalue &""" successful.", _
+                           PASSED_MESSAGE, "" 
+                .StatusCode = SDNoScriptFailure
+                .StatusInfo = PASSED_MESSAGE           
+            end if
+        end if
+    
+    End With
+
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub SetTextCharacters ()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Routine to set the text of the editbox.
+'#      It verifies we can read the property, sets the text value and then 
+'#      verifies that the property has been set to that value.
+'#      This routine uses only the literal text provided.  It does not attempt 
+'#      to convert or interpret the text provided as special characters.  To 
+'#      do that, see the SetTextValue command.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Text to send to editbox.  Quoted text may be used to ensure proper
+'#              expected value retrieval.
+'#              There is also no check for a missing field because that would be
+'#              the same as specifying no text ("")--which is valid.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub SetTextCharacters(mode)
+
+    Dim status
+    Dim currvalue
+    Dim tablevalue
+    Dim newvalue
+    
+    with otrd
+
+        .statuscode = SDGeneralScriptFailure
+        
+        .windowGUIID.Activate
+
+        if IsMissing(mode) then mode = 0 'SetTextCharacters
+        '                       mode = 1 'SetUnverifiedTextCharacters
+                
+        status = GetCurrentEditBoxText(currvalue)
+        'do not log a problem if the command is "unverified"-- mode=1
+        'html problem: status is generally always 0, even if a problem exists in getting the text.
+        if status <> 0 and mode = 0 then
+            LogMessage "EditBox "& .TestCommand &" in "& .WindowName &" warning " & _
+                       "in table " & .FileName & " at line " & _
+                       .LineNumber, WARNING_MESSAGE, _
+                       .WindowName &":"& .CompName & _
+                       " current text could not be retrieved. TestComplete Error"& CStr(status)
+            .StatusCode = SDScriptWarning
+            .StatusInfo = WARNING_MESSAGE 
+        end if
+        
+        tablevalue = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+
+        Log.Enabled = False
+
+        if .environment = DDU_HTML_ENVIRONMENT then _
+            .compGUIID.Click 4,4        
+        if(mode = 1) then
+           UnverifiedCleanAndSetText .compGUIID, tablevalue
+        else
+           CleanAndSetText .compGUIID, tablevalue
+        end if
+
+        Log.Enabled = True
+
+        if mode = 1 Then
+            LogMessage .TestCommand &" """& tablevalue &""" sent to "& .CompName &".", GENERIC_MESSAGE, ""        
+            .StatusCode = SDNoScriptFailure
+            .StatusInfo = ""
+            Exit Sub
+        End if    
+        
+        status = GetCurrentEditBoxText(newvalue)
+        if status <> 0 then
+            LogMessage "EditBox "& .TestCommand &" in "& .WindowName & _
+                       " verification failed.  " & _
+                       "See table " & .FileName & " at line " & _
+                       .LineNumber, WARNING_MESSAGE, _
+                       .WindowName &":"& .CompName &" text could not be retrieved."
+            .StatusCode = SDScriptWarning
+            .StatusInfo = WARNING_MESSAGE
+        else
+            if StrComp(tablevalue, newvalue, 0) <> 0 then
+                LogMessage "EditBox "& .TestCommand &" in "& .WindowName & _
+                       " verification failed.  " & _
+                       "See table " & .FileName & " at line " & _
+                       .LineNumber, FAILED_MESSAGE, _
+                       .WindowName &":"& .CompName &" Set to:"""& tablevalue & _
+                       """, but returns:"""& newvalue &"""."
+                .StatusCode = SDGeneralScriptFailure
+                .StatusInfo = FAILED_MESSAGE
+            else
+                LogMessage .CompName &" "& .TestCommand & _
+                           " to """& tablevalue &""" successful.", _
+                           PASSED_MESSAGE, ""  
+                .StatusCode = SDNoScriptFailure
+                .StatusInfo = PASSED_MESSAGE                                     
+            end if
+        end if
+    
+    End With
+
+End Sub
+
+'############################################################################
+'#
+'#   Sub CleanAndSetText(textComponent, text)
+'#
+'# DESCRIPTION:
+'#
+'#      Clean firstly the text box component, then input the text.
+'#      It will use 3 kinds of key-short-cuts to clean the text box. For different kinds
+'#      of input box, the short-cut will be different to clean the text. Here we will not
+'#      distinguish the type of text box. So try all the 3 key-short-cuts.
+'#      We may need to add more short-cuts if the 3 ways can't work. 
+'#      
+'# PARAMETERS:
+'#
+'#      textComponent    -   The text box component
+'#      text             -   The text to be input to textComponent
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: APR 09, 2012
+'# History:
+'#
+'#      APR 09, 2012    Original Release
+'#      JAN 26, 2014    (Lei Wang) Before using 'shortcut' to clean the editbox, test if it is empty or not.
+'#      NOV 05, 2014    (JunwuMa) Added 500ms delay to sync with a validation that may happen after the editbox's content is deleted.  
+'#
+'############################################################################
+Sub CleanAndSetText(textComponent, text)
+    'Find the description of Keys method as following
+    'Before typing, Keys activates the application window that contains the object and gives that object the input focus.
+    'So we don't need to set focus to the component ourself
+
+    'We will try to clean the text by the short-cut key, but not all short-cut will work
+    'for all text component, we will try all short-cuts.
+    If(Not IsEditBoxEmpty()) Then
+        textComponent.Keys "[End]![Home][Del]"
+        textComponent.Keys "[P50]"      'pause typing for 50 milliSec; wish part of input value not be ignored
+        
+        If(Not IsEditBoxEmpty()) Then
+            textComponent.Keys "^a[Del]"
+            textComponent.Keys "[P50]"      'pause typing for 50 milliSec; wish part of input value not be ignored
+            
+            If(Not IsEditBoxEmpty()) Then
+                textComponent.Keys "[PageUp]![PageDown][Del]"
+                textComponent.Keys "[P50]"      'pause typing for 50 milliSec; wish part of input value not be ignored
+            End If            
+        End If
+      'waiting for a while, expecting a validation(if have) on textComponent can finish, before inputting target text
+      'special editbox may validate the text value, and input a proper value when its value is empty/blank/unexpected 
+      Delay 500 
+    End If    
+       
+    '#We will try to input text
+    textComponent.Keys text
+    textComponent.Keys "[P50]"      'pause typing for 50 milliSec
+    
+End Sub
+
+'############################################################################
+'#
+'#      MAR 26, 2014    Original Release (Carl Nagle)
+'#
+'############################################################################
+Sub UnverifiedCleanAndSetText(textComponent, text)
+
+    'unverified means we cannot assume we can get the text value successfully
+    
+    textComponent.Keys "[End]![Home][Del]"
+    textComponent.Keys "[P50]"      'pause typing for 50 milliSec; wish part of input value not be ignored
+        
+    textComponent.Keys "^a[Del]"
+    textComponent.Keys "[P50]"      'pause typing for 50 milliSec; wish part of input value not be ignored
+            
+    textComponent.Keys "[PageUp]![PageDown][Del]"
+    textComponent.Keys "[P50]"      'pause typing for 50 milliSec; wish part of input value not be ignored
+       
+    '#We will try to input text
+    textComponent.Keys text
+    textComponent.Keys "[P50]"      'pause typing for 50 milliSec
+    
+End Sub
+
+'##########################################################################
+'#
+'# DESCRIPTION:
+'#      Test if the EditBox is empty or not
+'# History:
+'#      JAN 26, 2014    (Lei Wang) Original Release
+'#
+'############################################################################
+Function IsEditBoxEmpty()
+    Dim status
+    Dim value
+    
+    On Error Resume Next
+    status = GetCurrentEditBoxText(value)
+    IsEditBoxEmpty = ((status=0) And value="")
+
+End Function
+
+'##########################################################################
+'#
+'#   Function GetObjectData(editBox, ByRef itemArray())
+'#
+'# DESCRIPTION:
+'#
+'#     Get content of the EditBox
+'#      
+'# INPUT PARAMETERS:
+'#
+'#      editBox     In:    EditBox TC Object
+'#      itemArray   Out:   An array to contain content of EditBox        
+'#  
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: DEC 14, 2012
+'# History:
+'#
+'#      DEC 14, 2012    Original Release
+'#
+'############################################################################
+Function GetObjectData(editBox, ByRef itemArray())
+    Dim status, newvalue
+
+    On Error Resume Next
+    GetObjectData = False
+    
+    status = GetCurrentEditBoxText(newvalue)
+    
+    If status <> 0 Then
+        SAFSDebug "Fail to get EditBox's text.", DEBUG_ERROR
+    Else
+        ReDim itemArray(0)
+        SAFSDebug "Got EditBox's text '"&newvalue&"'", DEBUG_INFO
+        itemArray(0) =  newvalue
+        GetObjectData = True
+    End If
+    
+End Function
+
+'############################################################################
+'#
+'#   Sub Main ()
+'#
+'# DESCRIPTION:
+'#
+'#      Entry point to process a StepDriver ACTION COMMAND on a EDITBOX.
+'#      The routine merely reads the Global otrd.testcommand and 
+'#      calls the appropriate subroutine to process it.  
+'#
+'#      If the testcommand is unrecognized it will log a WARNING_MESSAGE and
+'#      exit with a WARNING status.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Carl Nagle
+'# Orig   Date: AUG 06, 1999
+'# History:
+'#
+'#      AUG 06, 1999    Original Release
+'#
+'############################################################################
+Sub EditBoxMain()
+
+	On Error Resume Next     
+        SAFSDebug "EditBoxFunctions processing: "& otrd.TestCommand, DEBUG_INFO
+        
+        'do stuff in here
+        Select Case UCase(otrd.testcommand)
+            
+            Case "SETTEXTVALUE"
+            
+                SetTextValue 0
+            
+            Case "SETUNVERIFIEDTEXTVALUE"
+            
+                SetTextValue 1
+                
+            Case "SETTEXTCHARACTERS"
+            
+                SetTextCharacters 0
+            
+            Case "SETUNVERIFIEDTEXTCHARACTERS"
+            
+                SetTextCharacters 1
+                
+            Case Else
+
+                'GenericUnimplementedCommand        
+                HandleGenericCommand
+            
+        End Select
+
+End Sub
+'#XML:</keywords></keyword_library>

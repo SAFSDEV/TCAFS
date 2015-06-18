@@ -1,0 +1,561 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    DDVariableStore.SBL  SOURCECODE
+'#                                                                         
+'#    NOTE:  When adding routines update exports in DDVariableStore.SBH      
+'#
+'# MODULE DESCRIPTION:
+'#
+'# Provides named variable storage and retrieval for the framework.
+'# The variable names are NOT case-sensitive and are stored as ALL upper case.
+'#
+'#
+'# This library is defined by:
+'#
+'# DDVariableStore_X    Constants, Globals, Types etc.
+'# DDVariableStore      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'##############################################################################
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT STAFUtilities
+
+'# PRIVATE DEPENDENCIES
+
+
+'# FORWARD DECLARATIONS
+Const VID       = "^"                        'character identifying variables
+Dim DDVariableStore                'DDVariableStore.GlobalVariables
+                                             'from DDVariableStore.DLL
+
+Sub InitDDVariables()
+    Set DDVariableStore = Nothing
+    Set DDVariableStore = CreateObject("DDVariableStore.GlobalVariables")
+End Sub
+
+'############################################################################
+'#
+'#  Function DDVGetVariableValue (varname As String, varvalue As Variant) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Locate the variable varname value and return it in the varvalue Variant.
+'#      If the variable does not exist, we will attempt lookthru to the current 
+'#      Application Map FALLBACK LOOKUP SECTION as set or defaulted in 
+'#      DDGUIUtilties.DDGGetDefaultAppMapSection.  
+'#
+'#      Items successfully retrieved via lookthru to the Application Map are NOT 
+'#      set as variables here.  They remain as items stored in the Application Map
+'#      retrieved via the DDGUIUtilities.DDGGetGUIID call.
+'#
+'#      If the variable is still not found, then this call creates it and gives 
+'#      it the default value as may be provided in the varvalue Variant.
+'#
+'# PARAMETERS:
+'#
+'#      varname     Case-insensitive name of the variable to retrieve the 
+'#                  value of.
+'#
+'#      varvalue    Variant to hold the retrieved value of the variable.
+'#                  This input Variant will not be modified if the variable name
+'#                  does not exist in storage or is not found via lookthru in
+'#                  the current Application Map(if any).  
+'#
+'#                  Thus, you can preset the Variant to contain a default 
+'#                  (non-empty) value for the call.  The variable will then be 
+'#                  stored with this default (non-empty) value and sqaSuccess 
+'#                  will be returned.
+'#
+'# RETURNS:
+'#
+'#       0  (sqaSuccess) if the variable name exists and we set the varvalue 
+'#                       (or accepted the default value provided).
+'#
+'#      -1  If the variable was not found to exist and could not be defaulted.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Function DDVGetVariableValue (varname, varvalue)
+
+    DDVGetVariableValue = getSAFSVariable(varname, varvalue)
+    
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function DDVSetVariableValue (varname As String, varvalue As Variant) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Set a named variable to the given value.  If the variable already exists
+'#      then overwrite the existing value.  If not, create it.
+'#
+'# PARAMETERS:
+'#
+'#      varname     Case-insensitive name of the variable to set.
+'#
+'#      varvalue    Variant containing the value to assign the variable.
+'#
+'# RETURNS:
+'#
+'#       0  (sqaSuccess) if the variable name & value was set. 
+'#          At this time there are no other return codes.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Function DDVSetVariableValue (varname, varvalue)
+
+  DDVSetVariableValue = setSAFSVariable(varname, varvalue)
+      
+End Function
+
+
+
+'############################################################################
+'#
+'#  Sub DDVClearAllVariables ()
+'#
+'# DESCRIPTION:
+'#
+'#      Clear out and Reset our DDVariableStore
+'#
+'# PARAMETERS:
+'#
+'#      none
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Sub DDVClearAllVariables()
+
+    clearAllSAFSVariables
+        
+End Sub
+
+Sub DDVClearArrayVariable(prefix)
+
+    clearSAFSArrayVariable prefix
+        
+End Sub
+
+
+'############################################################################
+'#
+'#  Function DDVSubstituteVariables (inputRecord As String, fieldID As Integer,
+'#                                   delimiters As String) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Given an inputRecord, delimiters, and a fieldID into the record to 
+'#      start with; attempt to locate references to stored variables and substitute 
+'#      the values of those variables enclosed in quotes in place of the references 
+'#      (in a copy of the inputRecord).  
+'#
+'#      Variable references are identified by a leading caretd (^) immediately
+'#      followed by the name of the variable.  The name of the variable itself
+'#      cannot contain any whitespace, quotes, additional carets, equality 
+'#      symbols (=), or any field delimiters that might be used during the 
+'#      life of the variable.  The routine will successfully ignore variable 
+'#      assignment references (Ex: ^var1 = "some value")
+'#
+'#      Examples of variable references (delimited by commas):
+'#
+'#          ^ID , ^employee.name , ^employee.address1 , ^employee.address2
+'#
+'#      On exit the above example would now contain the values of the variables: 
+'#      but it will substitute them in place like this:
+'#
+'#          "6422","John Smith","124 Main St.","LidsVille USA"
+'#
+'#      Use StringUtilities.<a href="StringUtilities.htm#GetTrimmedQuotedField">GetTrimmedQuotedField</a> to extract the value of the 
+'#      field from the new record.
+'#
+'#      Note: For runtime optimizations, no error detection is performed on
+'#      the input parameters.  This should be handled prior to calling this
+'#      routine.
+'#
+'# PARAMETERS:
+'#
+'#      inputRecord     delimited record of fields possibly containing references
+'#                      to variables.  This String will not be modified by
+'#                      this routine.  A copy will be created, modified, and 
+'#                      returned.
+'#
+'#      fieldID         the index to begin processing the inputRecord.  Normally,
+'#                      we would process from the very beginning, which is field 1.
+'#
+'#      delimiters      A String of the delimiters that possibly separates 
+'#                      the fields in the inputRecord.  Any one character acts 
+'#                      like a delimiter.
+'#
+'# RETURNS:
+'#
+'#      String          A copy of the inputRecord with any variable references 
+'#                      converted to their actual values.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Function DDVSubstituteVariables (inputRecord, fieldID, delimiters)
+
+    Dim record
+    Dim field
+    Dim varname
+    Dim varvalue
+    Dim index  
+    Dim count
+    Dim sindex   'index start of field
+    Dim eindex   'index start of next field
+    Dim estring   
+    Dim status
+    
+    record = inputRecord    
+    DDVSubstituteVariables = record
+
+    'only process if there is a VID somewhere in the record    
+    if InStr(record, VID) = 0 then exit function
+
+    count = GetFieldCount(record, 1, delimiters)
+
+    for index = fieldID to count
+        field = GetTrimmedField(record, index, delimiters)
+        if left(field, 1) = VID then
+            'make sure this is not a variable assignment operation
+            if InStr(2, field, "=") > 0 then 
+                varname = ""
+            else
+                varname = GetTrimmedField(Mid(field, 2), 1, " ^"""& chr(9))
+            end if
+            
+            'if we have a valid name without assignment
+            if Len(varname) > 0 then
+                varvalue = ""
+                status = DDVGetVariableValue(varname, varvalue)
+                
+                'if we retrieved a value (or set a new default value)
+                if status = 0 then
+                    sindex = GetFieldIndex(record, index, 1, delimiters)
+                    eindex = GetFieldIndex(record, index+1, 1, delimiters)
+                    
+                    'if this is not the last field get the rest of the string
+                    if eindex > 0 then estring = Mid(record, eindex -1)
+                    
+                    'keep the first part and substitute variable value
+                    record = left(record, sindex -1) & """"& varvalue & """"
+                    
+                    'if not the last field then add the delimiter 
+                    'and the rest of the record
+                    if eindex > 0 then record = record & estring
+                end if
+            end if
+        end if
+    next 
+
+    DDVSubstituteVariables = record
+        
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function DDVExtractVariables (inputRecord As String, fieldID As Integer,
+'#                                   delimiters As String) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Given an inputRecord, delimiters, and a fieldID into the record to 
+'#      start with; attempt to locate variable assignment references and store 
+'#      the variable with its assigned value.  Once the assignments are complete
+'#      replace the assignment field in the record with the value of the
+'#      assignment enclosed in quotes to preserve an leading or trailing spaces.
+'#
+'#      Variable assignment references are identified by a leading caret (^) 
+'#      immediately followed by the name of the variable, an equal sign (=), 
+'#      and the value to assign to that variable. Whitespace can exist on either
+'#      side of the equal sign.  
+'#
+'#      If the proposed value is NOT another variable reference then the proposed 
+'#      value will be trimmed of leading and trailing whitespace via 
+'#      StringUtilities.<a href="StringUtilities.htm#GetTrimmedQuotedString">GetTrimmedQuotedString</a>.
+'#      And, yes, a variable can be assigned the value of another variable.
+'#
+'#      The name of the variable itself cannot contain any whitespace, quotes, 
+'#      additional carets, equality symbols (=), or any field delimiters 
+'#      that might be used during the life of the variable.
+'#
+'#      Examples of variable assignment references (delimited by commas):
+'#
+'#          AddEmployee, ^ID=6422, ^employee.name = "John Smith" , ^payID = ^ID
+'#
+'#      On exit the above example would not only store the values of the variables, 
+'#      but it will substitute them in place like this:
+'#
+'#          AddEmployee,"6422","John Smith","6422"
+'#
+'#      Note: For runtime optimizations, no error detection is performed on
+'#      the input parameters.  This should be handled prior to calling this
+'#      routine.
+'#
+'#      Additionally, if there field values which need to begin with an caret(^) 
+'#      that are not to be considered as variables they should be enclosed 
+'#      in quotes.
+'#
+'# PARAMETERS:
+'#
+'#      inputRecord     delimited record of fields possibly containing references
+'#                      to variables.  This String will not be modified by
+'#                      this routine.  A copy will be created and modified for
+'#                      return.
+'#
+'#      fieldID         the index to begin processing the inputRecord.  Normally,
+'#                      we would process from the very beginning, which is field 1.
+
+'#
+'#      delimiters      A String of the delimiters that possibly separates 
+'#                      the fields in the inputRecord.  Any one character acts 
+'#                      like a delimiter.
+'#
+'# RETURNS:
+'#
+'#      String          A copy of the inputRecord with any variable assignments 
+'#                      converted to their actual values.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Function DDVExtractVariables (inputRecord, fieldID, delimiters)
+
+    Dim record
+    Dim field
+    Dim varname
+    Dim varvalue
+    Dim index   
+    Dim count
+    Dim sindex   'index start of variable value
+    Dim eindex   'index end of assignment field
+    Dim estring  
+    Dim status
+    
+    record = inputRecord
+    DDVExtractVariables = record
+    
+    'only process if there is a VID somewhere in the record    
+    if InStr(record, VID) = 0 then exit function
+
+    count = GetFieldCount(record, 1, delimiters)
+
+    for index = fieldID to count
+        field = GetTrimmedField(record, index, delimiters)
+        
+        'if VID is first char it may be an assignment
+        if left(field, 1) = VID then
+
+            
+            'look for "=" sign
+            sindex = InStr(3, field, "=", 1)
+            
+            'variable name must be at least 1 char long (^a=)
+            if sindex > 3 then
+            
+                'get the trimmed var name left of the equal sign
+                varname = RTrimWhitespace(Mid(field, 2, sindex -2))
+            
+                'if we have a name
+                if Len(varname) > 0 then
+            
+                    Dim infield
+                    Dim outfield
+                
+                    'see if we can handle a ^var2 = ^var1
+                    infield  = Mid(field, sindex +1)
+                    outfield = DDVSubstituteVariables(infield, 1, delimiters)
+                
+                    'if there was no substitution
+                    if StrComp(infield, outfield, 0) = 0 then
+                        varvalue = GetTrimmedQuotedString (infield)
+                    
+                    'if there WAS substitution
+                    else
+                        varvalue = GetTrimmedQuotedString (outfield)
+                    end if
+                
+                    status = DDVSetVariableValue(varname, varvalue)
+                
+                    'for reinsertion enclose it in quotes
+                    varvalue = """"& varvalue &""""
+                
+                    'replace our assignment with the resulting value
+                    sindex = GetFieldIndex(record, index, 1, delimiters)
+                    eindex = GetFieldIndex(record, index+1, 1, delimiters)
+                    
+                    'if this is not the last field get the rest of the string
+                    if eindex > 0 then estring = Mid(record, eindex -1)
+                    
+                    'keep the first part and substitute variable value
+                    record = left(record, sindex -1) & varvalue
+                    
+                    'if not the last field then add the delimiter 
+                    'and the rest of the record
+                    if eindex > 0 then record = record & estring
+                end if
+            end if
+        end if
+        
+    next 
+
+    DDVExtractVariables = record
+        
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDVProcessExpression (expression As String) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Process the provided expression using our global DDVariableStore.
+'#      
+'#      The routine uses StringUtilities.ProcessExpression
+'#
+'#
+'# PARAMETERS:
+'#
+'#      expression      the String expression to process.
+'#
+'#
+'# RETURNS:
+'#
+'#      String          The results of the expression conversion.
+'#
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Function DDVProcessExpression (expression)
+
+    'if not yet dimensioned then 
+    if DDVariableStore Is Nothing then InitDDVariables
+
+    DDVProcessExpression = ProcessExpression(expression, DDVariableStore)
+
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDVProcessFieldExpressions (inputRecord As String, fieldID As Integer,
+'#                                  delimiters As String) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Given an inputRecord, delimiters, and a fieldID into the record to 
+'#      start with--attempt to process expressions in fieldID and each 
+'#      subsequent field.  
+'#      
+'#      The routine uses StringUtilities.ProcessFieldExpressions.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      inputRecord     delimited record of fields possibly containing references
+'#                      to variables.  This String will not be modified by
+'#                      this routine.  A copy will be created and modified for
+'#                      return.
+'#
+'#      fieldID         the index to begin processing the inputRecord.  Normally,
+'#                      we would process from the very beginning, which is field 1.
+'#
+'#      delimiters      A String of the delimiters that possibly separates 
+'#                      the fields in the inputRecord.  Any one character acts 
+'#                      like a delimiter.
+'#
+'# RETURNS:
+'#
+'#      String          A copy of the inputRecord with expressions
+'#                      converted to their actual values.
+'#                      Some fields may not be converted if there are errors 
+'#                      with the parameters or syntax.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 20, 2006
+'# History:
+'#
+'#      SEP 20, 2006    Original Release
+'#
+'############################################################################
+Function DDVProcessFieldExpressions (inputRecord, fieldID, delimiters)
+
+    'if not yet dimensioned then 
+    if DDVariableStore Is Nothing then InitDDVariables
+
+    DDVProcessFieldExpressions = ProcessFieldExpressions(inputrecord, fieldID, _
+                                                    delimiters,  DDVariableStore)
+
+End Function
+
+

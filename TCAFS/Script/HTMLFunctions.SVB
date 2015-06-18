@@ -1,0 +1,266 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    HTMLFUNCTIONS.SBL  SCRIPT
+'# 
+'#XML:<?xml version="1.0"?>
+'#XML:<!DOCTYPE keyword_library SYSTEM "keyword_library.dtd">
+'#XML:<keyword_library>
+'#XML:
+'#XML:    <libraryType        type="COMPONENT" />
+'#XML:
+'#XML:    <libraryInfo        name="HTMLFunctions" 
+'#XML:                         doc="HTMLFunctions.htm" 
+'#XML:                  sourcecode="HTMLFunctions.sbl" 
+'#XML:                       class="HTML">
+'#XML:
+'#XML:        <description>
+'#XML:           <short_desc> 
+'#XML:              Actions for working with HTML objects
+'#XML:           </short_desc>
+'#XML:        </description>
+'#XML:
+'#XML:    </libraryInfo>
+'#XML:
+'#XML:    <runtime      platform="Windows"
+'#XML:                    engine="Robot"
+'#XML:                   version="2002" />
+'#XML:
+'#XML:    <keywords>
+'#                                                                        
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on SQA Type=HTML objects in 
+'#      Data-Driven Automation.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#      Click                   'Click on the link.
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 25, 2006
+'# History:
+'#
+'#      SEP 25, 2006    Original Release
+'#
+'##############################################################################
+
+'# SCRIPT CONSTANTS
+
+' Valid TESTCOMMANDS 
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT DDGUIUtilities
+'USEUNIT DDGUIUtilities_X
+'USEUNIT StringUtilities
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT StepDriver_X
+
+'USEUNIT GenericObjectFunctions
+
+
+'# FORWARD DECLARATIONS
+
+
+
+'############################################################################
+'#
+'#   Sub HTMLClick ()
+'#
+'#XML:  <keyword         name="CLICK" 
+'#XML:            displayText="Click" >
+'#XML:           <description>
+'#XML:              <short_desc> 
+'#XML:                Attempts to perform a standard Click on an HTML object on a webpage.
+'#XML:              </short_desc>
+'#XML:              <detailed_desc> 
+'#XML:                <p>Attempts to perform a standard Click on an HTML object on a webpage.</p>
+'#XML:                <p> 
+'#XML:                The click area lookup is done with the component name.</p>
+'#XML:                <p>
+'#XML:                Typical Data Table records:</p>
+'#XML:                <p>
+'#XML:                (1) t BrowserWin HTMLObject Click
+'#XML:                <p>
+'#XML:                #1 above should merely click on the defined object.</p>
+'#XML:                <p>
+'#XML:                Examples:</p>
+'#XML:                <p>
+'#XML:                [BrowserWin]
+'#XML:                BrowserWin=WindowTag=WEBBrowser
+'#XML:                AnObject=Type=HTML;HTMLId=objectID
+'#XML:                ...</p>
+'#XML:                <p>
+'#XML:              </detailed_desc>
+'#XML:           </description>
+'#XML:     <parameters>
+'#XML:           <description>
+'#XML:              <short_desc> 
+'#XML:              </short_desc>
+'#XML:              <detailed_desc>
+'#XML:              </detailed_desc>
+'#XML:           </description>
+'#XML:        </parameter>
+'#XML:     </parameters> 
+'#XML:     <examples>
+'#XML:
+'#XML:        <example>
+'#XML:           <usage>T, WebBrowser, WebTable, CLICK</usage>
+'#XML:           <description>
+'#XML:              <short_desc> 
+'#XML:                A single click is performed on the HTML object.
+'#XML:              </short_desc>
+'#XML:              <detailed_desc> 
+'#XML:              </detailed_desc>
+'#XML:           </description>
+'#XML:        </example>
+'#XML:
+'#XML:     </examples>
+'#XML:  </keyword>
+'#
+'# DESCRIPTION:
+'#
+'#      Tries to perform a standard Click on an HTML object on a webpage.
+'#      We can optionally click on a particular area of the object
+'#      rather than a generic click (Coords=1,1).
+'#
+'#      The click area lookup is done with the component name AND an additional
+'#      app map reference provided in Field #5.
+'#
+'#      Typical Data Table records:
+'#
+'#      (1) t BrowserWin AHTMLObject Click
+'#      (2) t BrowserWin AHTMLObject Click AMappedRegion
+'#
+'#      #1 above should merely click on the HTML object.
+'#
+'#      #2 above will contain an entry in the BrowserWin section with 
+'#         normal recognition information for it.  The entry will also have it's
+'#         own section in the Application Map in which there will be entries
+'#         defining specific indexed or named regions for the table.
+'#
+'#         Examples:
+'#
+'#         [BrowserWin]
+'#         BrowserWin=WindowTag=WEBBrowser
+'#         ATable=Type=HTMLFrame;HTMLID=top;Type=HTML;Index=1
+'#         ...
+'#
+'#         [ATable]
+'#         AMappedRegion=Coords=10,10
+'#         ANamedRegion=Coords=10,10,25,25
+'#         AnIndexedRegion=Col=1;Row=1
+'#          
+'#          
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 25, 2006
+'# History:
+'#
+'#      SEP 25, 2006    Original Release
+'#
+'############################################################################
+Sub HTMLClick()
+
+    Dim status
+    Dim sResult
+    Dim lookup
+        
+    with otrd
+
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+
+        'get and validate bench file specification
+        lookup = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if lookup <> "" then 
+            sResult = DDGGetGUIID(.compname, lookup, "")
+            if sResult = "" then 
+                sResult = "1,1"
+                LogMessage "Performing generic HTMLTable CLICK. Could not find "& _
+                       " """& lookup &""" "& _
+                       " in App Map from table "& .FileName &" at line "& _
+                       .LineNumber, WARNING_MESSAGE, _
+                       .InputRecord
+                .statuscode = SDScriptWarning
+                lookup = ""
+            end if
+        else
+            sResult = ""
+        end if
+        
+        .windowGUIID.SetFocus   
+        .compGUIID.Click sResult
+        
+        LogMessage .CompName &" "& lookup &" CLICKED", _
+                   "", ""
+
+        'set to success if not otherwise changed from failure
+        if .statuscode = SDGeneralScriptFailure then .statuscode = SDNoScriptFailure
+
+    End With
+    
+End Sub
+
+
+
+
+
+'############################################################################
+'#
+'#   Sub Main ()
+'#
+'# DESCRIPTION:
+'#
+'#      Entry point to process a StepDriver ACTION COMMAND on a HTML object.
+'#      The routine merely reads the Global otrd.testcommand and 
+'#      calls the appropriate subroutine to process it.  
+'#
+'#      If the testcommand is unrecognized it will be processed by the 
+'#      GenericMasterFunctions.GenericUnimplementedCommand routine.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 25, 2006
+'# History:
+'#
+'#      SEP 25, 2006    Original Release
+'#
+'############################################################################
+Sub HTMLMain()
+
+        'do stuff in here
+        Select Case UCase(otrd.testcommand)
+            
+            'Case "CLICK"
+            
+            '    HTMLMain = HTMLClick
+            
+            Case Else
+
+                HandleGenericCommand           
+            
+        End Select
+
+End Sub
+
+'#XML:</keywords></keyword_library>

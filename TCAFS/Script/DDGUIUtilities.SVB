@@ -1,0 +1,4053 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    DDGUIUtilities.SBL  SOURCECODE
+'#                                                                         
+'#    NOTE:  When adding routines update exports in DDGUIUtilities.SBH      
+'#
+'# MODULE DESCRIPTION:
+'#
+'# Utility routines for working with actual GUI objects and object properties.
+'#
+'# This library is defined by:
+'#
+'# DDGUIUtilities_X    Constants, Globals, Types etc.
+'# DDGUIUtilities      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      SEP 26, 2011    (Lei Wang) Added method DDGIsGUIPropertyExist() and DDGGetGUIPropertiesString()
+'#      MAY 28, 2012    (JunwuMa) Update DDGSetGUIProperty() to support setting the property dilimited with dot.
+'#      JUL 31, 2012    (Lei Wang) Add function DDGGetTextValue()
+'#      NOV 06, 2012    (JunwuMa) Update DDGGetFindWindow and DDGGetFindComponent to de-allocate dynamic array.
+'#      Dec 05, 2012    (JunwuMa) Update DDGGetObjectByRec to remove Sys.refresh to save time.
+'#      MAR 20, 2014    (Lei Wang) Add methods DDGGetTextValues() to get an array of possible text value for an object.
+'#
+'################################################################################
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT DDGUIUtilities_X
+'USEUNIT StringUtilities
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+'USEUNIT StepDriver_X
+'USEUNIT DDUtilities_X
+'USEUNIT DDUtilities
+
+'# PRIVATE DEPENDENCIES
+
+'# FORWARD DECLARATIONS
+
+Dim MapStore                  'DDVariableStore.GlobalMappings from DDVariableStore.DLL
+Dim PathStore                 'DDVariableStore.DDVariables
+Dim lastID                    'DDGGetProperty routines
+Dim lastFound                 'DDGGetProperty routines
+
+'module level timer variables and constant
+Dim DDGtime1, DDGtime2, DDGtime         'all variants
+Dim DDGmaxcross                         '-1 if timer will cross midnight
+Const DDGMidnight = 86400               'seconds in a day
+
+'# ----------------------------------------------------------------------------
+Sub DDGStartTimer (seconds)    
+    DDGtime1 = Timer                    'Timer returns seconds since midnight
+    
+    'calculate timer timeout value
+    DDGtime2 = DDGtime1 + seconds       
+    if DDGtime2 > DDGMidnight then      'timer will cross midnight
+        DDGmaxcross = -1    
+        DDGtime2 = DDGtime2 - DDGMidnight  'adjust timeout value accordingly
+    else 
+        DDGmaxcross = 0                 'timer will not cross midnight
+    end if
+End sub
+
+'# ----------------------------------------------------------------------------
+Sub DDGResetTimer ()
+    DDGmaxcross = 0
+    DDGtime1 = 0
+    DDGtime2 = 0
+    DDGtime  = 0
+End Sub
+
+'# ----------------------------------------------------------------------------
+'-1 true; 0 false
+Function DDGTimeExpired ()   
+    
+    'exit if no timer started
+    if (DDGtime1 = 0 AND DDGtime2 = 0) OR _
+       (DDGtime1 = DDGtime2 ) then 
+        DDGTimeExpired = -1
+        DDGResetTimer
+        exit function
+    end if
+    
+    DDGTimeExpired = 0    
+    
+    'get current "time"
+    DDGTime = Timer
+    if DDGmaxcross = -1 then            'we expect to cross midnight
+        'so current time MUST be < than start time AND
+        'current time must be > than timeout value
+        if (DDGtime < DDGtime1) AND (DDGtime >= DDGtime2) then    
+            DDGTimeExpired = -1
+            DDGResetTimer
+        end if
+    else                                'we don't expect to cross midnight
+        if DDGtime >= DDGtime2 then      'so current time MUST only be greater than timeout value
+            DDGTimeExpired = -1
+            DDGResetTimer
+        end if
+    end if
+End Function
+
+'############################################
+'#
+'# Retrieve all toplevel Window objects from all non-system Processes.
+'# This should include Window and PopupWindow objects.
+'# The window must Exist, have Height and Width > 0, and Visible=True
+'# The above criteria may change over time as needed for completeness. 
+'#
+'# The returned item is the Array of Window objects
+'#
+Function DDGGetTopLevelWindows()
+    Dim dict, p, w
+    On Error Resume Next
+    Set dict = CreateObject("Scripting.Dictionary")
+    Sys.Refresh
+    For each p in Sys
+        if Not p.System then
+          if p.ChildCount > 0 then
+              For each w in p
+                  if w.Exists and _
+                     w.Height > 0 and _
+                     w.Width > 0 and _
+                     w.Visible then
+                     dict.Add w, ""
+                  end if
+              Next
+          end if
+        end if
+    Next
+    DDGGetTopLevelWindows = dict.Keys
+    Set dict = Nothing
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIPropertyVariant (guiID As Object, property As String, 
+'#                                     value As Variant) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Retrieves a GUI object property value as a Variant along with status 
+'#      information just like SQAGetProperty.  However, the routine
+'#      checks for unmodified, local (.\;), and desktop (\;) contexts for the 
+'#      object before returning a sqaObjectNotFound status (which SQA does not).
+'#
+'#      This routine is only for single value properties.  If a property  
+'#      value is actually a list or array then you need to use
+'#      <a href="#ddggetguiarraypropertyvariants">DDGGetGUIArrayPropertyVariants</a>.
+'#
+'#      To get a single property value from within an array you must include 
+'#      the property name with an array syntax which includes the index into 
+'#      the array.  For example, to retrieve the 3rd value from the property 
+'#      List the property string would be "List(3)".
+'#  
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-sensitive name of the property 
+'#                  to get the value from. 
+'#
+'#      value       Variant to receive the retrieved value
+'#
+'# RETURNS:
+'#
+'#      0       Success.
+'#
+'#      -1      Invalid parameters
+'#
+'#      N       Failure status codes as describes by SQA's Object scripting 
+'#              routines.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      Apr 27, 2011    (Carl Nagle) Fixing for Test Complete         
+'#
+'############################################################################
+Function DDGGetGUIPropertyVariant (guiID, myproperty, value)
+
+    Dim status
+    Dim useID
+    'trying performance boost here   
+    On Error Resume Next
+    Log.Enabled = False
+    DDGetGUIPropertyVariant = -1
+    if (Not(IsObject(guiID))) then exit function        
+    
+    if IsObject(lastID) Then
+        if (guiID.name = lastID.name) then 
+            set useID = lastFound
+        else
+            set lastID = guiID
+            set useID = guiID
+        end if
+    else
+        set lastID = guiID
+        set useID = guiID
+    end if
+    
+    value = Eval(useID & "." & myproperty)
+    If Err.Number <> 0 Then
+      status = Err.Number
+    End If
+    
+    if status = 0 then
+        set lastFound = useID
+    else
+        set lastID = Nothing
+        lastFound = Nothing
+    end if
+    
+    Log.Enabled = True
+    
+    DDGGetGUIPropertyVariant = status
+    
+End Function
+
+'############################################################################
+'#
+'#  Function DDGGetGUIPropertyString (guiID As String, property As String, 
+'#                                    value As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Retrieves a GUI object property value as a String along with status 
+'#      information just like SQAGetPropertyAsString.  However, the routine
+'#      checks for unmodified, local (.\;), and desktop (\;) contexts for the 
+'#      object before returning a sqaObjectNotFound status (which SQA does not).
+'#
+'#      This routine is only for single value properties.  If a property  
+'#      value is actually a list or array then you need to use
+'#      <a href="#ddggetguiarraypropertystrings">DDGGetGUIArrayPropertyStrings</a>.
+'#
+'#      To get a single property value from within an array you must include 
+'#      the property name with an array syntax which includes the index into 
+'#      the array.  For example, to retrieve the 3rd value from the property 
+'#      List the property string would be "List(3)".
+'#  
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-sensitive name of the property 
+'#                  to get the value from. 
+'#
+'#      value       String to receive the retrieved value
+'#
+'# RETURNS:
+'#
+'#      -1      Invalid parameters
+'#
+'#      0       Success.
+'#
+'#      N       Failure status codes as describes by SQA's Object scripting 
+'#              routines.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      AUG 30, 2011   (JunwuMa) Update to support TC GuiObject for Flex or other domains. 
+'#      JUN 28, 2012   (DharmeshPatel) Switch aqObject.GetPropertyValue with Eval
+'#			(guiID.FullName & "." & myproperty)- TESTHELP091074.  
+'#      MAY 07, 2013   (JunwuMa) Update to exit function if object has no the property.
+'#      JUL 17, 2013   (JunwuMa) Rollback to code before May07,2013, to support TC9.3 
+'############################################################################
+Function DDGGetGUIPropertyString (guiID, myproperty, value)
+    
+    value = ""
+    'trying performance boost here 
+    On Error Resume Next
+    DDGGetGUIPropertyString = -1
+    if (Not(IsObject(guiID))) then exit function
+    
+    'exit if object has no this property, 
+    'otherwise following ways to get unexisted property will cause TC longtime waiting and break
+    'TCObject.PropertyExists(property) in TC8.7 doesn't work for some special components.
+' aqObject.IsSupported in TC9 does not support a property with more than two levels, like "aaa.bbb". It used to work in TC8.7 
+' comment this out. (Junwu) 17Jul2013 
+'    if not aqObject.IsSupported(guiID, myproperty) then 
+'        SAFSDebug "Object has no property: '" & myproperty & "'", DEBUG_INFO
+'        exit function 
+'    end if
+
+    Err.Clear
+    'Try TC API GetPropertyValue()
+    value = aqObject.GetPropertyValue(guiID,myproperty)
+    if ((Err.Number = 0)or(Err.Number = 91)) and (value = "") and (aqObject.isSupported(guiID, myproperty)) then
+      SAFSDebug "Property: '" & myproperty & "' through GetPropertyValue() appears to be valid, but is not set.", DEBUG_WARN 
+      DDGGetGUIPropertyString = 0
+      Exit Function
+    end if
+    
+    if (Err.Number <> 0) or (value = "") Then
+      Err.Clear
+      'retry with another way that supports Flex, and maybe other domains - Junwu
+      with guiID
+        value = Eval("." & myproperty)
+      end with
+    end If
+     
+    if ((Err.Number = 0)or(Err.Number = 91)) and (value = "") then
+      SAFSDebug "Property: '" & myproperty & "' through Eval(.) appears to be a valid property, but may not be set.", DEBUG_WARN 
+      DDGGetGUIPropertyString = 0
+      Exit Function
+    end if
+
+    If (Err.Number <> 0) or (value = "") Then
+      SAFSDebug "Can NOT get Property: '" & myproperty & "' through Eval(.): Err=" & CStr(Err.Number), DEBUG_WARN 
+      Err.Clear
+      value = Eval(guiID.FullName & "." & myproperty)   
+      If (Err.Number <> 0) and (not(Err.Number = 91)) Then
+        SAFSDebug "Can NOT get Property: '" & myproperty & "' through Eval(FullName): Err=" & CStr(Err.Number), DEBUG_ERROR
+      End If
+    End If
+
+    If Err.Number = 0 Then
+      SAFSDebug "Get Property: '" & myproperty & "', its value: '" & value & "'", DEBUG_INFO
+    else
+      if(Err.Number = 91) then
+          Err.Clear
+          value = ""
+          SAFSDebug "Assuming unset Property: '" & myproperty & "' (empty value).", DEBUG_WARN
+      end if
+    End If    
+                    
+    DDGGetGUIPropertyString = Err.Number
+    
+End Function
+
+'############################################################################
+'#  Function DDGIsGUIPropertyExist (guiID As String, property As String) As Boolean
+'#
+'# DESCRIPTION:
+'#      Test the existence of a GUI object property. If property exists, return True.
+'#  
+'# PARAMETERS:
+'#      guiID       Object which is the TestComplete GUI object.
+'#      property    String which is the case-sensitive name of the property 
+'#                  to get the value from. 
+'#
+'# RETURNS:
+'#      True      property exists
+'#      False     property doesn't exist
+'#
+'# ERRORS:
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 26, 2011
+'# History:
+'#      SEP 26, 2011    Original Release
+'#      DEC 03, 2013    Update to support testing embedded property, like FlexObject.dataProvider.list
+'#
+'############################################################################
+Function DDGIsGUIPropertyExist (guiID, myproperty)
+    Dim props
+    Dim prop
+    
+    On Error Resume Next
+    DDGIsGUIPropertyExist = False
+    if (Not(IsObject(guiID))) then exit function
+
+    If aqObject.IsSupported(guiID, myproperty) Then
+        SAFSDebug myproperty & " exists", DEBUG_INFO
+        DDGIsGUIPropertyExist = True
+        Exit Function
+    End If
+    
+    'Try to test the embedded property
+    If StringUtilities.StringContains(myproperty, ".") Then
+        Eval(guiID.FullName & "." & myproperty)
+        If Err.Number=438 Then 'Object doesn't support this property or method
+            DDGIsGUIPropertyExist = False
+        Elseif Err.Number=424 Then 'Object doesn't exist, ex. for property FlexObject.data.value, FlexObject.data may not exist
+            DDGIsGUIPropertyExist = False            
+        Elseif Err.Number=0 Then
+            DDGIsGUIPropertyExist = True
+        Else
+            SAFSDebug "Eval(" & guiID.FullName & "." & myproperty & ") with Error=" & Err.Number, DEBUG_WARN
+        End If
+        'If the property name contain dot(.), no need to try get all properties and compare the name with them.
+        Exit Function
+    End If
+    
+    'Try to get all properties, and compare the name
+    Set props = GetProperties(guiID)
+    While props.Hasnext
+        Set prop = props.Next
+        If StringEqualIgnoreCase(myproperty, prop.Name) Then
+            SAFSDebug myproperty & " exists in properties.", DEBUG_INFO
+            DDGIsGUIPropertyExist = True
+            Exit Function
+        End If
+    Wend
+    
+    DDGIsGUIPropertyExist = False
+    
+End Function
+
+'############################################################################
+'#
+'#  Function DDGGetGUIPropertiesString (guiID As String, values As Array) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Get all properties name and value of a GUI object.
+'#  
+'# PARAMETERS:
+'#
+'#      guiID    In    Object which is the TestComplete GUI object.
+'#
+'#      values   Out   Array contains the properties name and their value of a GUI object. 
+'#
+'# RETURNS:
+'#
+'#      0        Retrieve the properties successfully
+'#
+'#      not 0    Fail to retrieve the properties
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: SEP 26, 2011
+'# History:
+'#
+'#      SEP 26, 2011    Original Release 
+'#
+'############################################################################
+Function DDGGetGUIPropertiesString (guiID, values)
+
+    Dim status
+    Dim props
+    Dim prop
+    Dim i
+    
+    On Error Resume Next
+    DDGGetGUIPropertiesString = -1
+    if (Not(IsObject(guiID))) then exit function
+    
+    Set props = GetProperties(guiID)
+    status = Err.Number 
+    If status <> 0 Then
+      SAFSDebug " Can't get properties from Component.", DEBUG_ERROR
+      DDGGetGUIPropertiesString = status
+      Exit Function 
+    End If
+    
+    ReDim values(props.Count)
+    SAFSDebug " Component has " & CStr(props.Count) &" properties.", DEBUG_INFO   
+    
+    'Store the properties and values to an array
+    i = 0
+    While props.HasNext
+        Set prop = props.Next
+        values(i) = prop.Name & "=" & aqConvert.VarToStr(prop.Value)
+        If Err.Number <> 0 Then
+            '450 error will occur, invalid property??? , Just Ignore it
+            SAFSDebug " Ignore Error code: " & Err.Number, DEBUG_WARN
+            Err.Clear
+        Else        
+            i = i + 1
+        End If   
+    Wend
+    
+    status = Err.Number
+        
+    DDGGetGUIPropertiesString = status
+    
+End Function
+
+'############################################################################
+'#
+'#  Function DDGGetGUIArrayPropertySize (guiID As String, property As String, 
+'#                                       size As integer) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Returns the size of the property array for the given property.
+'#      This can only be done on properties whose values are lists or arrays.  
+'#      If the property is not an array then an error will be returned.
+'#
+'#      This routine attempts to locate the desired component by cycling
+'#      through variations of the guiID provided to better facilitate a match.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-sensitive name of the property 
+'#                  to get the size of (and verify it is an array).  
+'#
+'#      size        will receive the number of elements in the array if successful.
+'#
+'# RETURNS:
+'#
+'#      -1      Invalid parameters
+'#
+'#       0  Success. "size" will exit with the number of elements in the array.
+'#
+'#       N  Failure status codes as describes by SQA's Object scripting 
+'#          routines.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIArrayPropertySize (guiID, myproperty, size)
+
+    Dim status
+    Dim value
+    
+    'doubt this is good test complete code for ALL array properties
+        
+    On Error Resume Next
+    DDGGetGUIArrayPropertySize = -1
+    if (Not(IsObject(guiID))) then exit function
+    value = Eval(guiID.FullName & "." & myproperty)
+    if Err.Number <> 0 Then
+      value = Eval(guiID & "." & myproperty)
+    end If
+    
+    size = guiID.ListCount    
+    status = Err.Number
+    
+    If status <> 0 Then
+      LogMessage "Invalid Array Property: " & myproperty, ERROR_MESSAGE, ""
+    End If
+    
+    DDGGetGUIArrayPropertySize = status
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIArrayPropertyStrings (guiID As String, property As String, 
+'#                                          values() As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Returns a GUI object property value as an array of Strings.
+'#      This can only be done on properties whose values are lists or arrays.  
+'#      If a propety value is actually a single value then you need to use
+'#      <a href="#ddggetguipropertystring">DDGGetGUIPropertyString</a>.
+'#
+'#      We first call <a href="#ddggetguiarraypropertysize">DDGGetGUIArrayPropertySize</a> to 
+'#      ensure the property is actually an array with a size greater than 0.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-sensitive name of the property 
+'#                  to get the value from.  
+'#
+'#      values      a zero-based array of type String that has been declared
+'#                  as follows:   Dim values() As String
+'#                  This routine will handle the redimensioning of the array
+'#                  to suit.
+'#
+'# RETURNS:
+'#
+'#       -1 Invalid parameters
+'#
+'#       0  Success.
+'#
+'#       N  Failure status codes as describes by SQA's Object scripting 
+'#          routines.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIArrayPropertyStrings (guiID, myproperty, values())
+
+    Dim size, status   
+    Dim value, i
+    
+    'doubt this is proper test complete code
+    
+    'use guiID here so DDGGetGUIArrayPropertySize will set our lastID info 
+    On Error Resume Next
+    DDGGetGUIArrayPropertyStrings = -1
+    if (Not(IsObject(guiID))) then exit function
+    value = Eval(guiID.FullName & "." & myproperty)
+    
+    if Err.Number <> 0 then
+        value = Eval(guiID & "." & myproperty)
+    end if
+    
+    Redim values(GetListCount(value))         'function doesn't exist
+    for i = 0 to GetListCount(value) - 1
+       values(i) = GetListItem(value, i)
+    Next
+    status = Err.Number
+    
+    DDGGetGUIArrayPropertyStrings = status
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIArrayPropertyVariants (guiID As String, property As String, 
+'#                                           values() As Variant) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Returns a GUI object property value as an array of Variants.
+'#      This can only be done on properties whose values are lists or arrays.  
+'#      If a propety value is actually a single value then you need to use
+'#      <a href="#ddggetguipropertyvariant">DDGGetGUIPropertyVariant</a>.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-sensitive name of the property 
+'#                  to get the value from.  
+'#
+'#      values      a zero-based array of type Variant that has been declared
+'#                  as follows:   Dim values() As Variant
+'#                  This routine will handle the redimensioning of the array
+'#                  to suit.
+'#
+'# RETURNS:
+'#
+'#       -1 Invalid parameters
+'#
+'#       0  Success.
+'#
+'#       N  Failure status codes as describes by SQA's Object scripting 
+'#          routines.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIArrayPropertyVariants (guiID, myproperty, values())
+
+    ' not yet valid Test Complete code
+    Dim status
+    Dim useID
+
+    On Error Resume Next
+    DDGGetGUIArrayPropertyVariants = -1
+    if(Not(IsObject(guiID))) then exit function
+    if guiID = lastID then 
+        set useID = lastFound
+    else
+        set lastID = guiID
+        set useID = guiID
+    end if
+
+    'for performance try local context first    
+    value = useID.myproperty
+    If Err.Number <> 0 Then
+      status = Err.Number
+    End If  
+    On Error GoTo 0
+    
+    if status = 0 then
+        set lastFound = useID
+    else
+        set lastID = Nothing
+        set lastFound = Nothing
+    end if
+
+    DDGGetGUIArrayPropertyVariants = status    
+
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIObjectData (guiID As String, values() As Variant, Optional dataTest As Variant) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Returns GUI object data as an array of Variants.
+'#      This can only be done for objects that Robot can successfully execute
+'#      an Object Data VP (CompareData or CompareMenu) on.  We use our own dummy VP data to get 
+'#      at this data.  The user does not have to have an existing VP to use this 
+'#      function.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      values      array of type Variant that has been declared as follows:   
+'#
+'#                       Dim values() As Variant
+'#
+'#                  This routine will handle the redimensioning of the array
+'#                  to suit.  The returned values array will be a 2D 1-based array.
+'#                  That is, the first element is at row/col index 1,1.
+'#                  Note, you will need to evaluate the actual contents of the 
+'#                  returned array for your needs.  It is possible that hidden 
+'#                  rows and columns will be surfaced in the array.  So data that 
+'#                  appears like it should be in cell 1,1 may actually be in 
+'#                  cell 2,2 (or elsewhere depending on "hidden" rows and columns).
+'#                  
+'#      dataTest    optional string value that specifies the data to capture.
+'#                  Depending on the GUI object, the user might be able to
+'#                  capture different data, in addition to "Contents" which is
+'#                  usually available to all objects. For example, "Visible Nodes"
+'#                  and "Java Active State" are also available for JavaTrees.
+'#
+'#                  The default is "Contents".
+'#                  If "Menu" is provided then a dynamic Menu extraction will occur 
+'#                  where supported.
+'#
+'#                  Values specified for datatest are currently case-sensitive.
+'#
+'# RETURNS:
+'#
+'#       N  On Success, returns the number of ROWS returned in the values array.
+'#          This will include any header row(s) and/or leftmost "hidden" column(s).
+'#
+'#      -1  Fatal VP execution Error
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIObjectData (guiID, values(), dataTest)
+
+'    Const OBJECT_DATA_VP = "objectdata"
+'    Const OBJECT_MENU_VP = "objectmenu"
+'    Const VPTYPE        = "grd"
+'    Const VPEXT         = ".grd"
+'    Const VPBASEEXT     = ".base.grd"
+'    Const VPEXPEXT      = ".exp.grd"
+'    Const VPACTUAL      = ".act*"
+'    CONST VPMEXT        = ".vpm"
+'
+'    Const DEFAULT_DATA_TEST = "Contents"
+'    Const DEFAULT_MENU_TEST = "Menu"
+'    Const MROWS_INCREMENT = 500
+'    
+'    Dim status
+'    Dim vpbase
+'    Dim vpvpm
+'    Dim vpvpm2
+'    Dim vpexp
+'    Dim vpact
+'    Dim tpath
+'    Dim actual
+'    Dim vpDataTest
+'    Dim objectvp
+'    
+'    ' what object data to capture?
+'    If IsMissing(dataTest) Then
+'        vpDataTest = DEFAULT_DATA_TEST
+'        objectvp = OBJECT_DATA_VP    
+'        
+'    elseif datatest = DEFAULT_MENU_TEST then
+'        vpDataTest = DEFAULT_MENU_TEST
+'        objectvp = OBJECT_MENU_VP
+'    Else
+'        vpDataTest = dataTest
+'        objectvp = OBJECT_DATA_VP    
+'    End If
+'
+'    Dim aTemp()
+'    Dim aTemp2()
+'    Dim record
+'    Dim aNull
+'    Dim row, rows
+'    Dim mrows
+'    Dim col, cols, tcols
+'    
+'    On Error Resume Next
+'    DDGGetGUIObjectData = -1
+'    
+'    'have SQA give us a valid VP ACTUAL name to use for our dummy VP    
+'    vpbase = SQAVpGetCurrentBaselineFileName (objectvp, VPTYPE)
+'    'SQACONSOLEWRITE "DEBUG: vpbase = "& vpbase
+'    
+'    'delete any pre-existing file of same name
+'    Kill vpbase 
+'    DoEvents
+'    
+'    'copy our objectdata.grd dummy VP to this new ACTUAL filename and location
+'    FileCopy GetDDERuntimeRepo() & objectvp & VPEXT, vpbase
+'    
+'    'create an appropriate VPM ACTUAL filename from our given filename
+'    vpvpm = FindAndReplace(vpbase, VPBASEEXT, VPMEXT)
+'    'SQACONSOLEWRITE "DEBUG: vpvpm = "& vpvpm
+'
+'    'delete any pre-existing file of same name
+'    Kill vpvpm
+'    DoEvents
+'    
+'    'copy our dummy VPM file to this new filename and location
+'    FileCopy GetDDERuntimeRepo() & objectvp & VPMEXT, vpvpm
+'
+'    ' out dummy VPM file contains the default Data Test value "Contents"
+'    ' change that if different data test is specified
+'    If ((vpDataTest <> DEFAULT_DATA_TEST)AND(vpDataTest <> DEFAULT_MENU_TEST)) Then
+'
+'        Dim fin
+'        fin = FreeFile
+'        Open GetDDERuntimeRepo() & objectvp & VPMEXT For Input As #fin
+'
+'        Dim fout As Integer
+'        fout = FreeFile
+'        Open vpvpm For Output As #fout
+'
+'        Dim inline As String
+'        Do While Not EOF(fin)
+'            Line Input #fin, inline
+'            If InStr(inline, "Data Test=") > 0 Then
+'                Print #fout, "Data Test=" & vpDataTest
+'            Else
+'                Print #fout, inline
+'            End If
+'        Loop
+'        Close #fin, #fout
+'
+'    End If
+'    
+'    'get a valid VP BENCH filename based on our dummy VP
+'    vpexp= SQAVpGetBaselineFileName (objectvp, VPTYPE)
+'    'SQACONSOLEWRITE "DEBUG: vpexp = "& vpexp
+'    
+'    'extract the directory information out of the filename
+'    tpath = Mid$(vpexp, 1, LastInStr(vpexp, "\", 1))
+'    'SQACONSOLEWRITE "DEBUG: tpath = "& tpath
+'
+'    'delete any pre-existing file of same name
+'    Kill vpexp
+'    DoEvents
+'    
+'    'copy our dummy VPM file to this new BENCH filename and location
+'    FileCopy GetDDERuntimeRepo() & objectvp & VPEXT, vpexp
+'
+'    'DEBUG might not need this section at all
+'    vpvpm2 = tpath & GetShortFileName(vpvpm)
+'    if StrComp(vpvpm2, tpath, 1) <> 0 then Kill vpvpm2
+'    
+'    DoEvents
+'    
+'    'perform the ObjectDataVP to capture the data. ListViewVP should work for all or most
+'    SQASuspendLogOutput
+'    'Window SetContext, winguiID, "Activate=0"  'Carl Nagle: winguiID parameter removed
+'    if vpDataTest = DEFAULT_MENU_TEST then
+'        status = WindowVP (CompareMenu, GUIID, "VP="& objectvp)
+'    else
+'        status = ListViewVP (CompareData, GUIID, "VP="& objectvp)
+'    end if    
+'    SQAResumeLogOutput
+'    
+'    DoEvents
+'    
+'    'delete all our temporary files as quickly as possible
+'    Kill vpbase
+'    Kill vpvpm
+'    Kill vpexp
+'    if StrComp(tpath, vpvpm2, 1) <> 0 then Kill vpvpm2
+'
+'    DoEvents
+'    
+'    'determine the path to the ACTUAL filename that was captured
+'    vpact = FindAndReplace(vpexp, VPEXPEXT, VPACTUAL)
+'    'SQACONSOLEWRITE "DEBUG: vpact = "& vpact
+'
+'    'if no actual was created? No error? Or bigger problem?
+'    'we should ALWAYS have an actual because we ALWAYS should fail
+'    'unless a really big problem like "could not even attempt VP" occurs
+'    vpact = Dir$(vpact)
+'    if vpact = "" then EXIT FUNCTION 'with failure
+'    'SQACONSOLEWRITE "DEBUG: DIR(vpact) = "& vpact
+'    
+'    vpact = tpath & vpact
+'
+'    'now we need to extract the data and fill the array
+'    actual = FreeFile
+'    Open vpact for Input as #actual
+'
+'    'loop through the ACTUAL file to extract the records
+'    rows = 0
+'    mrows = 0
+'    cols = 0
+'    Do Until EOF(actual)
+'
+'        Line Input #actual, record
+'        aNull = Instr(record, Chr(0))
+'        
+'        'remove string terminators
+'        If aNull > 0 Then record = Left(record, aNull -1)
+'
+'        If Len(record) > 0 Then        
+'            if (rows>=mrows) then
+'                mrows = mrows + MROWS_INCREMENT
+'                ReDim Preserve aTemp(0 to mrows)
+'            end if
+'            aTemp(rows) = record
+'            rows = rows +1
+'            
+'            'determine width of array
+'            tcols = GetFieldCount(record, 1, Chr(9))
+'            if tcols > cols then cols = tcols
+'        End If
+'    Loop
+'
+'    'close the ACTUAL file
+'    Close #actual
+'    
+'    'delete our temporary file
+'    if StrComp(tpath, vpact, 1) <> 0 then Kill vpact  'what if it isn't a filename? only the directory?  YIKES!
+'
+'    if rows < 1 then exit function
+'    
+'    Redim values( 1 to rows, 1 to cols)
+'
+'    'extract the data into the array
+'    For row = 1 to rows
+'        record = aTemp(row -1)
+'        tcols = GetFieldArray(record, 1, Chr(9), aTemp2)
+'        For col = 1 to tcols
+'            values(row, col) = aTemp2(col)
+'        Next
+'    Next
+'    
+'    On error goto 0    
+'              
+'    DDGGetGUIObjectData = rows
+'    
+End Function
+
+
+'text value without any status info (Checked), (Unchecked) etc..
+'internal routine that performs no error checking
+'populates ddgobjdatanode
+'returns ddgobjdatanode with status info removed (if any)
+'#      JUL 20, 2005    (Carl Nagle) Added Global var support for performance.
+Function DDGGetObjectDataNodeText( nodes(), row, col)
+    Dim inputnode
+    Dim iindex
+
+    ddgobjdatanode = nodes(row, col)        
+    'remove any STATUS info embedded in the values (like in .NET trees)
+    iindex = InStr(ddgobjdatanode, " (Checked)")
+    if iindex < 1 then iindex = InStr(ddgobjdatanode, " (Unchecked)")
+    if iindex > 0 then
+        if iindex = 1 then
+            inputnode = ""
+        else
+            inputnode = Left(ddgobjdatanode, iindex -1)
+        end if
+    else
+        inputnode = ddgobjdatanode
+    end if
+    DDGGetObjectDataNodeText = inputnode
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetRootNodeInfo (nodes() As Variant, 
+'#                               rootRow as Integer, rootCol as Integer) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Find the first non-blank cell in the provided 2D array.
+'#      Returns the string of that root node and fills in the variables rootRow 
+'#      and rootCol with the row and column where the root was found in the 
+'#      values array.
+'#
+'#      This is generally useful for evaluating the ObjectData arrays returned 
+'#      from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      nodes()     Generally, a 2D array of Variant values like those returned 
+'#                  from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#                  The array must be 0-based or higher.  Usually it is 1-based.
+'#                  
+'#      rootRow     pass in a variable that will receive the row from which the 
+'#                  first non-blank cell was found.
+'#
+'#      rootCol     pass in a variable that will receive the row from which the 
+'#                  first non-blank cell was found.
+'#
+'# RETURNS:
+'#
+'#      String      The string value of that first non-blank cell,
+'#                  or an emptry string.
+'#
+'# ERRORS:
+
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetRootNodeInfo (nodes(), rootRow, rootCol)
+
+    Dim textnode
+    
+    'use persistent objdata variables defined above
+            
+    On Error Resume Next    
+    ddgobjdatarowMin = LBOUND(nodes, 1)
+    ddgobjdatacolMin = LBOUND(nodes, 2)
+    ddgobjdatarows = UBOUND(nodes, 1)
+    ddgobjdatacols = UBOUND(nodes, 2)
+
+    if (ddgobjdatarowMin < 0) or (ddgobjdatacolMin < 0) then exit function
+    if (ddgobjdatarows < 0) or (ddgobjdatacols < 0) then exit function
+
+    'take the quickest route to find the root
+    if ddgobjdatacols < ddgobjdatarows then   
+
+        For ddgobjdatarow = ddgobjdatarowMin to ddgobjdatarows
+            For ddgobjdatacol = ddgobjdatacolMin to ddgobjdatacols
+                textnode = DDGGetObjectDataNodeText(nodes, ddgobjdatarow, ddgobjdatacol)
+                if Len(textnode) > 0 then
+                    rootRow = ddgobjdatarow
+                    rootCol = ddgobjdatacol
+                    ddgobjdatarootrow = ddgobjdatarow
+                    ddgobjdatarootcol = ddgobjdatacol
+                    DDGGetRootNodeInfo = textnode
+                    exit function
+                end if
+            Next
+        Next
+           
+    else
+    
+        For ddgobjdatacol = ddgobjdatacolMin to ddgobjdatacols
+            For ddgobjdatarow = ddgobjdatarowMin to ddgobjdatarows
+                textnode = DDGGetObjectDataNodeText(nodes, ddgobjdatarow,ddgobjdatacol)
+                if Len(textnode) > 0 then
+                    rootRow = ddgobjdatarow
+                    rootCol = ddgobjdatacol
+                    ddgobjdatarootrow = ddgobjdatarow
+                    ddgobjdatarootcol = ddgobjdatacol
+                    DDGGetRootNodeInfo = textnode
+                    exit function
+                end if
+            Next
+        Next
+
+    end if
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetFullNodePath (nodepath as String, delimiter as String, 
+'#                               nodes() as Variant, Optional fuzzy, Optional matchIndex) as String
+'#
+'# DESCRIPTION:
+'#
+'#      Find the fullNodePath string that proves our nodepath exists in the 
+'#      provided nodes array.  Normally, this requires an exact match, but we 
+'#      can allow for partial matches and case-insensitive comparisons and 
+'#      matching with the Optional "fuzzy" parameter.  The nodes 
+'#      array is expected to be configured as a 2D array representation of 
+'#      hierarchical data like that provided from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#
+'#      Our nodes array looks like this:
+'#
+'#          root   
+'#              level1
+'#              level1a
+'#                     level2
+'#                     level2a
+'#              level1b
+'#                     level2b
+'#                     level2c
+'#                            level3
+'#              level1c
+'#
+'#      So, you can see that "level1b" indicates the end of child nodes for 
+'#      "level1a".   "level1c" indicates the end of child nodes for "level2c" 
+'#      AND "level1b". 
+'#
+'#      nodepaths are hierarchical paths to individual leaf nodes using the specified 
+'#      delimiter between parent and child nodes.
+'#
+'#      Example nodepaths with "->" delimiter:
+'#
+'#          root->level1b->level2c->level3
+'#          root->level1c
+'#
+'#      Example fuzzy nodepaths with "->" delimiter:
+'#
+'#          r->1b->2c->3
+'#          oo->c
+'#          t->level1b->2c->level
+'#
+'# PARAMETERS:
+'#
+'#      nodePath    A string showing parent/child hierarchical information 
+'#                  separated by delimiters.
+'#
+'#      delimiter   A String specifying the delimiter used to separate parent/child 
+'#                  relationsips.
+'#
+'#      nodes()     Generally, a 2D array of Variant values like those returned 
+'#                  from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#                  The array must be 0-based or higher.  Usually it is 1-based.
+'#                  The nodes array is expected to be configured as a 2D array representation of 
+'#                  hierarchical data like that provided from DDGGetGUIObjectData.
+'#                  
+'#      fuzzy       Optional parameter to allow for partial text matches when 
+'#                  identifying nodes.  
+'#                  0=(default) exact match required.
+'#                  1=case-insensitive partial matches allowed.
+'#                  
+'#      matchIndex  Optional parameter to allow for the Nth match, not just the first.
+'#                  This matchIndex only applies to the leaf nodes in the full path.
+'#                  If provided the numeric integer value must be > 0.
+'#                  
+'#      embedIndex  Optional parameter if true (non-zero) tells the routine to return ;Index= 
+'#                  information in the returned full path where discernable.
+'#                  This can usually only be accomplished when fuzzy=0 (exact match required).
+'#                  Returns paths like:
+'#                  DupedNode;Index=2->BranchNode->LeafNode
+'#                  RootNode->DupedNode;Index=2->LeafNode
+'#
+'#  embedIndexBase  specify the base index when embedIndex is true.  By default this IndexBase 
+'#                  is 1.  However, things like .NET have made the Index= indexbase 0.  Thus, 
+'#                  for .NET embedIndexBase would need to be specified as 0.
+'#                  
+'# RETURNS:
+'#
+'#      String      Upon success, we return the full exact match of the full 
+'#                  hierarchy path to the requested node.  Thus, if you provide 
+'#                  a fuzzy path, this routine will return the full complete 
+'#                  path string to the node--all fuzziness removed.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetFullNodePath (nodepath, delimiter, nodes(), fuzzy, matchIndex, _
+                             embedIndex, embedIndexBase)
+
+    'uses DDGObjData Global vars in DDGUIUtilities_X.sbh
+    Dim status
+    Dim nodelevels
+    Dim nodelevel
+    Dim nodelevelinfo()
+    Dim valuenode
+    Dim inputnode
+    Dim rootRow
+    Dim rootCol
+    Dim root
+    Dim fuzzyMatch
+    Dim matches
+    Dim iindex
+    Dim indexBase
+    Dim indexOffset
+                
+    On Error Resume Next    
+    'get the number of nodelevels in nodepath
+    nodelevels = GetMultiDelimitedFieldCount(nodepath, 1, delimiter)
+
+    ddgobjdatarows = UBOUND(nodes, 1)
+    ddgobjdatacols = UBOUND(nodes, 2)
+    ddgobjdatarowMin = LBOUND(nodes, 1)
+    ddgobjdatacolMin = LBOUND(nodes, 2)
+
+    if (ddgobjdatarows < 0) or (ddgobjdatacols < 0) then exit function
+
+    nodelevel = 1
+    valuenode = GetMultiDelimitedField(nodepath, nodelevel, 1, delimiter)
+
+    root = DDGGetRootNodeInfo (nodes, rootRow, rootCol)
+    if root = "" then exit function     'should never happen, right?
+
+    'verify nodelevels does not exceed available Cols
+    if (nodelevels < 1) or ((rootCol + nodelevels -1) > ddgobjdatacols) then exit function    
+    
+    ReDim nodelevelinfo(nodelevels, 3)
+    ' nodelevel,1=valuenode
+    ' nodelevel,2=fullNodePath
+    ' nodelevel,3=matches
+            
+    ddgobjdatafullNodePath = ""
+    If IsMissing(fuzzy) then
+        fuzzyMatch = 0
+    ElseIf fuzzy <> 0 Then
+        fuzzyMatch = 1
+    Else
+        fuzzyMatch = 0
+    End if
+
+    if IsMissing(matchIndex) then matchIndex = 1
+    matches = 0
+        
+    If IsMissing(embedIndex) then embedIndex = 0
+    'cannot embedIndex on fuzzy matches at this time
+    if fuzzyMatch <> 0 then embedIndex = 0
+
+    indexBase = 1
+    If Not IsMissing(embedIndexBase) then 
+        if IsNumeric(embedIndexBase) then indexBase = CInt(embedIndexBase)
+    end if
+    nodelevelinfo(1,3) = indexBase
+
+    'iterate through the rows to match up our nodepath
+    For ddgobjdatarow = rootRow to ddgobjdatarows
+
+        ddgobjdatacol = rootCol 
+        
+        'ensure objectdata cols up to our current nodelevel are empty
+        'if not empty, then our current node does NOT apparently contain
+        'the child we are looking for.
+        Do while ddgobjdatacol < nodelevel + rootCol -1
+            inputnode = DDGGetObjectDataNodeText(nodes, ddgobjdatarow, ddgobjdatacol)
+
+           'if we have finished the current nodes children :(
+            if Len(inputnode) > 0 then                 
+
+                'If we have exhausted all BACKUP opportunities
+                if nodelevel = 1 then EXIT FUNCTION
+
+                'BACKUP one level and try for possible dupes on
+                nodelevelinfo(nodelevel, 3) = indexBase
+                nodelevel = nodelevel -1
+                
+                valuenode = nodelevelinfo(nodelevel,1)
+                ddgobjdatafullNodePath=nodelevelinfo(nodelevel,2)
+                matches=0  'matches only valid at last nodelevel
+                ddgobjdatacol = rootCol
+            else
+                ddgobjdatacol = ddgobjdatacol + 1
+            end if            
+        Loop
+
+        'OK, we have verified the row up to this point is empty
+        'col now equals nodelevel
+        inputnode = DDGGetObjectDataNodeText(nodes, ddgobjdatarow, ddgobjdatacol)
+        
+        'see if the current data value = our target node for this level
+        'if not, move on to the next row
+        'fuzzyMatch is a test for a partial match
+        if fuzzyMatch then
+            'just check for partial matches
+            status = InStr(1, inputnode, valuenode, 1)
+        else
+            'check for exact match
+            status = StrComp(inputnode, valuenode, 0)
+            
+            'flip our status so it is the same for fuzzy and not fuzzy checks
+            if status = 0 then 
+                status = 1
+            else 
+                status = 0
+            end if
+        end if
+
+        'process any match        
+        if status > 0 then 
+
+            if nodelevel = nodelevels then 
+                matches = matches + 1
+            else
+                nodelevelinfo(nodelevel,1) = valuenode
+                nodelevelinfo(nodelevel,2) = ddgobjdatafullnodepath
+                nodelevelinfo(nodelevel,3) = nodelevelinfo(nodelevel,3) +1
+            end if
+            
+            indexOffset = Trim(Str(nodelevelinfo(nodelevel,3)-1))
+            
+            if nodelevel > 1 then            
+                'cannot continue to append text for duplicate matches
+                if matches = 0 then 
+                   ddgobjdatafullNodePath = ddgobjdatafullNodePath & delimiter & inputnode
+                   if (embedIndex <> 0)AND(nodelevelinfo(nodelevel,3) > (indexBase +1)) then _
+                       ddgobjdatafullnodepath = ddgobjdatafullnodepath &";Index="& indexOffset
+                elseif matches = matchIndex then
+                   ddgobjdatafullNodePath = ddgobjdatafullNodePath & delimiter & inputnode
+                   if (embedIndex <> 0)AND(nodelevelinfo(nodelevel,3) > (indexBase +1)) then _
+                       ddgobjdatafullnodepath = ddgobjdatafullnodepath &";Index="& indexOffset
+                end if                   
+            else
+                'cannot continue to append text for duplicate matches
+                if matches = 0 then 
+                    ddgobjdatafullNodePath = inputnode
+                   if (embedIndex <> 0)AND(nodelevelinfo(nodelevel,3) > (indexBase +1)) then _
+                       ddgobjdatafullnodepath = ddgobjdatafullnodepath &";Index="& indexOffset
+                elseif matches = matchIndex then
+                    ddgobjdatafullNodePath = inputnode
+                   if (embedIndex <> 0)AND(nodelevelinfo(nodelevel,3) > (indexBase +1)) then _
+                       ddgobjdatafullnodepath = ddgobjdatafullnodepath &";Index="& indexOffset
+                end if
+            end if
+
+            'if we are done
+            if nodelevel = nodelevels then
+                if matches = matchIndex then
+                    DDGGetFullNodePath = ddgobjdatafullNodePath
+                    exit For
+                end if
+            
+            'if not yet done
+            else
+                nodelevel = nodelevel + 1
+                nodelevelinfo(nodelevel,3) = indexBase
+                valuenode = GetMultiDelimitedField(nodepath, nodelevel, 1, delimiter)
+            end if
+        end if
+'BACKUP:        
+    Next
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetNodeNonBlankColValueCount (nodes() As Variant, 
+'#                                            column as Integer) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Return the number of non-blank cells in the provided column of the 2D array.
+'#
+'#      This is generally useful for evaluating the ObjectData arrays returned 
+'#      from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      nodes()     Generally, a 2D array of Variant values like those returned 
+'#                  from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#                  The array must be 0-based or higher.  Usually it is 1-based.
+'#                  
+'#      column      The column within the 2D array to evaluate.
+'#
+'#
+'# RETURNS:
+'#
+'#      Integer     The number of non-blank values in the provided column.
+'#                  -1 on error.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Carl Nagle
+'# Orig   Date: APR 03, 2003
+'# History:
+'#
+'#      APR 03, 2003    Original Release
+'#
+'############################################################################
+Function DDGGetNodeNonBlankColValueCount (nodes(), column)
+
+    Dim rows
+    Dim cols
+    Dim rowMin
+    Dim colMin
+    Dim row
+    Dim node
+    Dim valCount
+            
+    On Error Resume Next    
+    rowMin = LBOUND(nodes, 1)
+    colMin = LBOUND(nodes, 2)
+    rows = UBOUND(nodes, 1)
+    cols = UBOUND(nodes, 2)
+
+    DDGGetNodeNonBlankColValueCount = -1
+    
+    if (rowMin < 0) or (colMin < 0) then exit function
+    if (rows < 0) or (cols < 0) then exit function
+    if (column < colMin) or (column > cols) then exit function
+
+    valCount = 0
+    For row = rowMin to rows
+        node = nodes(row,column)
+        if Len(node) > 0 then valCount = valCount + 1
+    Next
+
+    DDGGetNodeNonBlankColValueCount = valCount
+               
+End Function
+
+' compares levels of two nodes of a tree captured in a 2D array
+'
+' A tree node occupies a unique row in the 2D array returned from 
+' <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>. And the column where
+' the node data resides corresponds to its level in the tree (i.e. root node is
+' the left most compared to other nodes). This function compares two nodes
+' (represented by their row number) and returns the difference between their
+' column numbers. Possible values are listed in the table below
+'
+'               INPUT                     RETURNS
+' ------------------------------------------------
+' row1 < row2 (node1 closer to root)        < 0
+' row1 = row2 (nodes on same level)         = 0
+' row1 > row2 (node1 farther from root)     > 0
+' row 1 or row 2 are empty (invalid node)   Null
+'
+' PARAMETERS
+'
+' data      1-base 2D array containing the tree data
+' row1      row number of the first node in the data array
+' row2      row number of the other node in the data array
+'
+' RETURNS
+'
+'   the difference between the levels (column numbers) of the two nodes
+
+Function CompareObjectDataRowLevel(data(), row1, row2)
+    Dim col1, col2
+    Dim i
+    For i = 1 To UBound(data, 2)
+        if col1 = 0 then _
+            If Len(data(row1, i)) > 0 Then _
+               col1 = i
+        if col2 = 0 then _
+            If Len(data(row2, i)) > 0 Then _
+               col2 = i
+        if (col1 > 0) and (col2 > 0) then exit for
+    Next
+
+    If col1 = 0 Or col2 = 0 Then
+        CompareObjectDataRowLevel = Null
+    Else
+        CompareObjectDataRowLevel = col1 - col2
+    End If
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetObjectDataNodeInfo(data() As Variant, info As ObjectDataNodeInfo, children() As String, Optional match) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Retrieves information about a node of a tree captured in a 2D array.
+'#
+'#      This is generally useful for evaluating the ObjectData arrays returned 
+'#      from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      data    1-based 2D array of Variant values like those returned 
+'#              from <a href="#ddggetguiobjectdata">DDGGetGUIObjectData</a>.
+'#                  
+'#      info    input/output parameter to store information about the node of
+'#              interest. The FullPath and Delimiter fields of this user type
+'#              are the input parameters, thus should be populated before 
+'#              passing to this function. The rest of the fields are output
+'#              parameters populated by this function.
+'#
+'#      children    output parameter. 1-based array storing all child nodes of
+'#                  the target node. You should make sure info.ChildCount is not
+'#                  0 before accessing elements in this array.
+'#
+'#      match       Optional. 0 to match given path and object data exactly; 1
+'#                  to partially match given path to object data. E.g.
+'#                  "root->subfolder" is a partial match for object data node
+'#                  "myroot->mysubfolder". Partial match is also case-
+'#                  insensitive. Default is 0 (exact match).
+'#
+'# RETURNS:
+'#
+'#      0   on success.
+'#      1   on failure.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetObjectDataNodeInfo(data(), info, children(), match)
+
+    DDGGetObjectDataNodeInfo = 1
+
+    Dim textnode
+    Dim PartialMatch
+    If IsMissing(match) Then
+        PartialMatch = False
+    Else
+        If match = 1 Then
+            PartialMatch = True
+        Else
+            PartialMatch = False
+        End If
+    End If
+
+    Dim path, delim
+    path = info.FullPath
+    delim = info.Delimiter
+
+    Dim PathComponentCount
+    Dim FirstChildRow, LastChildRow
+    Dim NumChildren
+    Dim FullFoundPath
+
+    PathComponentCount = GetMultiDelimitedFieldCount(path, 1, delim)
+
+    ddgobjdataRows = UBound(data, 1)
+    ddgobjdataCols = UBound(data, 2)
+    ddgobjdataRowMin = LBound(data, 1)
+    ddgobjdataColMin = LBound(data, 2)
+
+    FirstChildRow = 1
+    LastChildRow = ddgobjdataRows
+    
+    ' locate the first path component in the grid
+    Dim PathComponent
+    PathComponent = GetMultiDelimitedField(path, 1, 1, delim)
+    Dim Found
+    Found = False
+    For ddgobjdatacol = 1 To ddgobjdataCols
+        For ddgobjdatarow = 1 To ddgobjdataRows
+            textnode = DDGGetObjectDataNodeText(data, ddgobjdatarow, ddgobjdatacol)
+            If PartialMatch Then
+                If InStr(1, textnode, PathComponent, 1) >= 1 Then
+                    Found = True
+                    Exit For
+                End If
+            Else
+                If PathComponent = textnode Then
+                    Found = True
+                    Exit For
+                End If
+            End If
+        Next
+        If Found Then Exit For
+    Next
+
+    If Not Found Then Exit Function
+
+    Dim StartCol
+    StartCol = ddgobjdatacol
+    FullFoundPath = ""
+
+    If PathComponentCount > ddgobjdataCols - StartCol + 1 Or _
+        PathComponentCount < 0 Then Exit Function
+    
+    Dim i
+    For i = 1 To PathComponentCount
+
+        PathComponent = GetMultiDelimitedField(path, i, 1, delim)
+        If PathComponent = "" Then Exit Function
+
+        ddgobjdatacol = i + StartCol - 1
+        Found = False
+        For ddgobjdatarow = FirstChildRow To LastChildRow
+            textnode = DDGGetObjectDataNodeText(data, ddgobjdatarow, ddgobjdatacol)
+            If PartialMatch Then
+                If InStr(1, textnode, PathComponent, 1) >= 1 Then
+                    Found = True
+                    'build FullFoundPath 09.08.2005 RJL
+                    if ddgobjdatacol = StartCol then
+                        FullFoundPath = textnode
+                    else
+                        FullFoundPath = FullFoundPath & delim & textnode
+                    end if
+                    Exit For
+                End If
+            Else
+                If PathComponent = textnode Then
+                    Found = True
+                    'build FullFoundPath 09.08.2005 RJL
+                    if ddgobjdatacol = StartCol then
+                        FullFoundPath = textnode
+                    else
+                        FullFoundPath = FullFoundPath & delim & textnode
+                    end if
+                    Exit For
+                End If
+            End If
+        Next
+        
+        If Not Found Then Exit Function
+        
+        FirstChildRow = ddgobjdatarow + 1
+        LastChildRow = ddgobjdatarow
+        NumChildren = 0
+        ' determine the number of child nodes and the last child row
+        If ddgobjdatacol < ddgobjdataCols Then
+            Do While True
+                If LastChildRow >= ddgobjdataRows Then Exit Do
+                ' is the row below a child node?
+                If CompareObjectDataRowLevel(data, ddgobjdatarow, LastChildRow+1) >= 0 Then Exit Do
+                
+                'If Len(data(LastChildRow+1, col)) > 0 Then Exit Do
+                ' this row is a descendent (child or grand child). increase the 
+                ' last child pointer
+                LastChildRow = LastChildRow + 1
+                textnode = DDGGetObjectDataNodeText(data, LastChildRow, ddgobjdatacol+1)
+                If Len(textnode) > 0 Then
+                    ' only if the element to the right is not empy, is this 
+                    ' element a child (as opposed to a grand child)
+                    NumChildren = NumChildren + 1
+                    If i = PathComponentCount Then
+                        Redim Preserve children(NumChildren)
+                        children(NumChildren) = info.FullPath & _
+                            info.Delimiter & textnode
+                    End If
+                End If
+            Loop
+        End If
+
+    Next
+    
+    With info
+        .Row = ddgobjdatarow
+        .Column = PathComponentCount + StartCol - 1
+        .ChildCount = NumChildren
+        .FirstChildRow = FirstChildRow
+        .LastChildRow = LastChildRow
+        .FullFoundPath = FullFoundPath
+    End With
+    
+    DDGGetObjectDataNodeInfo = 0
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIChildrenIDs (guiID As String, values() As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Fills the provided array of Strings with the full recognition strings 
+'#      of all the children (if any) of the provided guiID.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      values      a zero-based array of Strings that has been declared
+'#                  as follows:   Dim values() As String
+'#                  This routine will handle the redimensioning of the array
+'#                  to suit.
+'#
+'# RETURNS:
+'#
+'#       -1 Invalid parameters
+'#
+'#       0  Success.
+'#
+'#       N  Failure status codes as describes by SQA's Object scripting 
+'#          routines.
+'#
+'#      NOTE that the returned array may have valid entries even if an error occurs.
+'#
+
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIChildrenIDs (guiID, values())
+    
+    On Error Resume Next
+    DDGGetGUIChildrenIDs = -1
+    if (Not(IsObject(guiID))) then exit function
+    values = guiID.FindAllChildren("FullName", "*", 1)
+    
+    DDGGetGUIChildrenIDs = Err.Number    
+
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIPropertyNames (guiID As String, values() As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Fills the provided array of Strings with all the available property 
+'#      names (if any) of the provided guiID.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      values      a zero-based array of Strings that has been declared
+'#                  as follows:   Dim values() As String
+'#                  This routine will handle the redimensioning of the array
+'#                  to suit.
+'#
+'# RETURNS:
+'#
+'#       -1 Invalid parameters
+'#
+'#       0  Success.
+'#
+'#       N  Failure status codes as describes by SQA's Object scripting 
+'#          routines.
+'#
+'#      NOTE that the returned array may have valid entries even if an error occurs.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIPropertyNames (guiID, values())
+    
+    Dim status
+    
+    'uncertain this is valid test complete code
+        
+    On Error Resume Next
+    DDGGetGUIPropertyNames = -1
+    if (Not(IsObject(guiID))) then exit function
+    status = SQAGetPropertyNames (guiID, values)
+    for i = 0 to guiID.PropertyCount
+      Redim Preserve values(i)
+      values(i) = guiID.Properties(i)
+    next
+    
+    if ubound(values) = 0 then
+      status = -1
+    End If
+    If Err.Number <> 0 Then
+      status = Err.Number
+    End If
+    On Error Goto 0
+    
+    DDGGetGUIPropertyNames = status    
+
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGOutputGUIChildrenIDs (guiID As String, filename As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Writes a file containing the full recognition strings 
+'#      of all the children (if any) of the provided guiID.
+'#      The file will be automatically overwritten if it already exists.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      filename    filename to output the retrieved children recognition methods.
+'#                  One child recognition per line in the file.
+'#                  The file will be automatically overwritten if it already exists.
+'#
+'# RETURNS:
+'#
+'#       0  Success.
+'#      -1  Invalid or missing filename 
+'#      
+'#      +N  Failure status codes as describes by SQA's Object scripting 
+'#          routines or file handling routines.
+'#
+'#      NOTE that the file or a partial file may be written even if an error occurs.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGOutputGUIChildrenIDs (guiID, filename)
+    
+    Dim status
+    Dim fileref
+    Dim index
+    Dim ids()  
+    Dim FileObject
+
+    On Error Resume Next        
+    DDGOutputGUIChildrenIDs = -1
+    
+    if filename = "" then exit function
+    if (Not(IsObject(guiID))) then exit function
+    status = DDGGetGUIChildrenIDs(guiID, ids)
+    
+    if (UBound(ids) - LBound(ids) > 0) then 
+        Set FileObject = Sys.OleObject("Scripting.FileSystemObject")
+        Set Fileref =FileObject.OpenTextFile(filename, 2)
+    
+        fileref.Write "Children of " & guiID
+        if status <> 0 then 
+            fileref.Write "(NOTE: Error #"& CStr(status) &" occurred while retrieving IDs)"
+        end if
+        Fileref.Write
+        for index = LBound(ids) to UBound(ids)
+            Fileref.Write ids(index)
+        next
+        Fileref.Close
+    end if
+
+    DDGOutputGUIChildrenIDs = status
+      
+End Function 
+
+
+'############################################################################
+'#
+'#  Function DDGOutputGUIPropertyNames (guiID As String, filename As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Writes a file containing all the available property names (if any) 
+'#      of the provided guiID.
+'#      The file will be automatically overwritten if it already exists.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      filename    filename to output the retrieved property names.
+'#                  One property name per line in the file.
+'#                  The file will be automatically overwritten if it already exists.
+'#
+'# RETURNS:
+'#
+'#       0  Success.
+'#      -1  Invalid or missing filename 
+'#      
+'#       N  Failure status codes as describes by SQA's Object scripting 
+'#          routines or file handling routines.
+'#
+'#      NOTE that the file or a partial file may be written even if an error occurs.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGOutputGUIPropertyNames (guiID, filename)
+    
+    Dim status
+    Dim fileref
+    Dim index
+    Dim ids()  
+
+    On Error Resume Next    
+    DDGOutputGUIPropertyNames = -1
+    
+    if filename = "" then exit function
+    if (Not(IsObject(guiID))) then exit function
+    status = DDGGetGUIPropertyNames(guiID, ids)
+    
+    if (UBound(ids) - LBound(ids) > 0) then 
+
+        Set FileObject = Sys.OleObject("Scripting.FileSystemObject")
+        Set Fileref =FileObject.OpenTextFile(filename, 2)
+        fileref.write "Properties of " & guiID
+        if status <> 0 then 
+            fileref.write "(NOTE: Error #"& CStr(status) &" occurred while retrieving properties)"
+        end if
+        fileref.write
+        for index = LBound(ids) to UBound(ids)
+            fileref.write ids(index)
+        next
+        fileref.Close
+    end if
+
+    DDGOutputGUIPropertyNames = status
+
+End Function 
+
+
+
+'############################################################################
+'#
+'#  Function DDGGetDefaultAppMapSection () As String
+'#
+'# DESCRIPTION:
+'#
+'#      Returns a fallback lookup section for searching an Application 
+'#      Map.  If the fallback lookup section value has not been set, we will 
+'#      return the value of the DDG_DEFAULT_FALLBACK_LOOKUP_SECTION.  
+'#      In this way, the user does not have to perform the test and setting of 
+'#      the fallback lookup section to use.
+'#
+'#      The FALLBACK LOOKUP SECTION is that section of the Application Map 
+'#      that will be searched for a matching componentID in the event that 
+'#      the specified windowsID section does not exist or does not contain that 
+'#      componentID.
+'#
+'#      By default, this FALLBACK LOOKUP SECTION will be the ApplicationConstants 
+'#      section of the application map.  The user can change this setting by 
+'#      providing a new value to the DDGSetDefaultAppMapSection routine.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      (none)
+'#
+'# RETURNS:
+'#
+'#      The Application Map section currently set as the FALLBACK LOOKUP SECTION 
+'#      to search when items are otherwise not found.  If no section was 
+'#      previously set, then we return the DEFAULT FALLBACK LOOKUP SECTION as 
+'#      defined in the Constants.  
+'#
+'# ERRORS:
+'#
+'#      (none)
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetDefaultAppMapSection ()
+    
+    if MapStore is Nothing then
+        Set MapStore = CreateObject("DDVariableStore.GlobalMappings")
+    end if
+    DDGGetDefaultAppMapSection = MapStore.DefaultAppMapSection
+    
+End Function
+
+
+
+'############################################################################
+'#
+'#  Sub DDGSetDefaultAppMapSection (section as String)
+'#
+'# DESCRIPTION:
+'#
+'#      Sets the FALLBACK LOOKUP SECTION for searching an Application 
+'#      Map.
+'#
+'#      The FALLBACK LOOKUP SECTION is that section of the Application Map 
+'#      that will be searched for a matching componentID in the event that 
+'#      the specified windowsID section does not exist or does not contain that 
+'#      componentID.
+'#
+'#      By default, this FALLBACK LOOKUP SECTION will be the ApplicationConstants 
+'#      section of the application map.  The user can change this setting by 
+'#      providing a new value to this routine.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      section     The string name of the section in an AppMap to use.
+'#
+'#
+'# ERRORS:
+'#
+'#      (none)
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Sub DDGSetDefaultAppMapSection (section)
+    if MapStore is Nothing then
+        Set MapStore = CreateObject("DDVariableStore.GlobalMappings")
+    end if
+        MapStore.DefaultAppMapSection = section
+End Sub
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIID (windowID As String, 
+'#                       componentID As String, 
+'#                       Optional appMapPath) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Retrieves the SQA recognition method for a given component in a given
+'#      window.  It will find this value in the Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a>
+'#      MAP file that should be valid prior to this call.  Optionally, a different 
+'#      app map file path can be provided.
+'#
+'#      The routine stores all retrieved values into a static storage array so that 
+'#      it only has to resort to the file the first time a particular component is
+'#      referenced.
+'#
+'#      The retrieved value can, instead, be coded as an instruction to get 
+'#      the actual recognition string via a DDVariable lookup.  If the retrieved 
+'#      AppMap lookup value is prefixed with "_DDV:" then this routine will 
+'#      perform the DDVariable lookup to retrieve the final recognition string 
+'#      value.  The following rules will apply for identifying the name of the 
+'#      variable that will be sought:
+'#
+'#      [WindowID]
+'#      WindowID=ARecognitionString    (use AppMap recognition string)
+'#      Component1=_DDV:               (use value from variable "Component1")
+'#      Component2=_DDV:AVariableName  (use value from variable "AVariableName")
+'#
+'#      Note: There may be the possibility of putting yourself into an infinite 
+'#      lookup loop if you use the _DDV: lookup mechanism that points to a variable 
+'#      that has not been defined (given a value) but points to an ApplicationConstants 
+'#      lookup value that also uses the _DDV: lookup mechanism that points to a 
+'#      variable of the same name that also has not been defined.  It sounds 
+'#      quite unlikely, but it is possible.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      windowID        String identifying the name of the window in which we 
+'#                      will find the componentID.  
+'#                      This is identical to a "Section" of an INI file which
+'#                      our map files mimic.  
+'#
+'#                      If no value is provided("") then we will attempt to check the 
+'#                      section identified by the DDGGetDefaultAppMapSection routine.
+'#                      Similarly, if a search using a WindowID finds no match, we will 
+'#                      check the DDGGetDefaultAppMapSection location.
+'#
+'#
+'#      componentID     String identifying the name of the component for which 
+'#                      we are seeking the recognition method (GUIID).
+'#                      This is identical to a "Key" of an INI file which our map
+'#                      files mimic.
+'#
+'#
+'#      appMapPath      Optional String specifying the path and name to an 
+'#                      alternate appmap to use.  If this is not provided then the 
+'#                      value found in Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a> is used
+'#                      instead.
+'#                      The file path and name can be relative to the current SQA 
+'#                      Repository, project, or datapool.
+'#                      We use <a href="FileUtilities.htm#findsqafile">FindSQAFile</a> to validate
+'#                      the appMapPath provided. 
+'#
+'# RETURNS:
+'#
+'#      If successful, the GUIID string (recognition method) of the specified component.
+'#      This is NOT the Test Complete Object.  Use Eval(rc) to get the Test Complete Object.
+'#
+'#      An empty string on failure ("").  This can be due to invalid values of any
+'#      provided parameters, an unset or invalid AUCurrentAppMap, or other errors.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIID (windowID, componentID, appMapPath)
+
+    Dim oGUIID
+    On Error Resume Next
+    Log.Enabled = False
+    
+    If Not(isObject(MapStore)) Then
+      Set MapStore = CreateObject("DDVariableStore.GlobalMappings")
+    End If
+    
+    'Try it as is first in case it is just an INI key reference
+        
+    DDGGetGUIID = MapStore.GetGUIID(CStr(windowID), CStr(componentID), CStr(appMapPath))
+    
+    Log.Enabled = True
+    
+End Function
+
+'############################################################################
+'#
+'#  Function DDGClearAppMapCache() As Long
+'#
+'# DESCRIPTION:
+'#
+'#      Resets and clears any cached TestObject information.
+'#
+'# PARAMETERS:
+'#
+'#      (none)
+'#  
+'# RETURNS:
+'#
+'#      0   normal return 
+'#     -1   some error occurred. 
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      OCT 09, 2013    Carl Nagle Fixed for TestComplete
+'#
+'############################################################################
+Function DDGClearAppMapCache ()
+
+    DDGClearAppMapCache = 0    
+    On error Resume Next
+    ' if MapStore Is Nothing then 
+    '    'force a reset of SAFSMAPS if in use
+    '    Set MapStore = CreateObject("DDVariableStore.GlobalMappings")
+    '    MapStore.ResetAndClear
+    '    Set MapStore = Nothing
+    '    exit function
+    ' end if
+    ' MapStore.ResetAndClear
+    Sys.Refresh
+End Function
+
+'################
+'#
+'# Centralized GetCompType Function using TestObject
+'#
+Function DDGGetCompTypeFromTestObject(obj)
+    Dim atype
+    'try the new mapfile way
+    atype = SDGetMappedObjectType(obj)
+    if aqString.GetLength(atype) > 1 then
+        SAFSDebug "DDGUIUtilities found externally mapped compType: "& atype, DEBUG_INFO
+    else
+        SAFSDebug "DDGUIUtilities reverting to embedded mappings for compType...", DEBUG_INFO
+        atype = GetCompType(obj.name)
+    end if
+    DDGGetCompTypeFromTestObject = atype
+End Function
+
+'################
+'#
+'# Centralized GetEnvironment Function using TestObject
+'#
+Function DDGGetEnvironmentFromTestObject(obj)
+    On Error Resume Next 
+    if (aqString.Find(obj.FullName, "IEXPLORE", 0, False) > -1) OR _ 
+       (aqString.Find(obj.FullName, "FIREFOX", 0, False) > -1) OR _
+       (aqString.Find(obj.FullName, "CHROME", 0, False) > -1) OR _
+       (aqString.Find(obj.FullName, "NETSCAPE", 0, False) > -1) Then
+          if obj.WaitProperty("FlexObject", "*", 0 ) = True Then
+              DDGGetEnvironmentFromTestObject = DDU_FLEX_ENVIRONMENT
+          else 
+              DDGGetEnvironmentFromTestObject = DDU_HTML_ENVIRONMENT
+          end if
+    elseif (aqString.Find(obj.FullName, "JAVA", 0, False) > -1) OR _
+           (aqString.Find(obj.FullName, "SWINGOBJECT", 0, False) > -1) OR _
+           (aqString.Find(obj.FullName, "SWTOBJECT", 0, False) > -1) OR _
+           (aqString.Find(obj.FullName, "AWTOBJECT", 0, False) > -1) Then
+        DDGGetEnvironmentFromTestObject = DDU_JAVA_ENVIRONMENT
+    elseif (aqString.Find(obj.FullName, "WPFOBJECT", 0, False) > -1) OR _
+           (aqString.Find(obj.FullName, "WINFORMSOBJECT", 0, False) > -1) OR _
+           (aqString.Find(obj.FullName, "VCLNETOBJECT", 0, False) > -1) OR _
+           (aqString.Find(obj.FullName, "VBOBJECT", 0, False) > -1) Then
+        DDGGetEnvironmentFromTestObject = DDU_NET_ENVIRONMENT                  
+    else                  
+      DDGGetEnvironmentFromTestObject = DDU_WIN32_ENVIRONMENT
+      'Sometimes we need other way to decide the application's environment
+      'For example, to check domain-related property
+      If aqObject.IsSupported(obj, "ProductName") Then
+        If (aqString.Find(obj.ProductName, ".NET", 0, False) > -1) Then
+          DDGGetEnvironmentFromTestObject = DDU_NET_ENVIRONMENT            
+        End If
+      End If            
+    End If          
+End Function
+
+'################
+'#
+'# Centralized IsTopLevelPopupContainer Function using TestObject
+'#
+Function DDGIsTopLevelPopupContainer(obj)
+    Dim atype
+    atype = DDGGetCompTypeFromTestObject(obj)
+    if aqString.GetLength(atype) > 1 then
+        DDGIsTopLevelPopupContainer = CStr(aqString.Find(atype, "POPUP", 0, False) > -1)
+    else
+        DDGIsTopLevelPopupContainer = CStr(false) 
+    end if
+End Function
+
+'############################################################################
+'#
+'#  Function DDGGetCompTypeFromGUIID (guiID As String) As String
+'#
+'# DESCRIPTION:
+'#
+'#      Retrieves the last component type specifier in the provided string.
+'#
+'#      For example:
+'#
+'#          guiID = "Type=HTMLDocument;Index=1;\;Type=Combobox;Name=MyCombo"
+'#
+'#      would return "Combobox"
+'#
+'#
+'# PARAMETERS:
+'#
+'#      guiID   String to locate the last component type specifier in.  
+'#              This is usually the recognition method of a component.        
+'#
+'# RETURNS:
+'#
+'#      If successful, the component type string of the component.
+'#
+'#      An empty string on failure ("").
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetCompTypeFromGUIID (guiID)
+
+    ' not valid test complete code
+    
+    Dim index
+    Dim sType
+    
+    On Error Resume Next
+    if guiID = "" then exit function
+    
+    index = LastInStr(guiID, "Type=", 1)
+    if index = 0 then exit function
+    
+    sType = Mid(guiID, index + 5)
+    DDGGetCompTypeFromGUIID = GetTrimmedField(sType, 1, ";")
+    
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForSQAObject (guiID As String, 
+'#                                Optional timeout) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given SQAObject.  That is, attempt to 
+'#      locate the object within the timeout period and return success only
+'#      if the object is found within that period.  A given object can be 
+'#      created even if it is not yet visible.  In some cases, Windows 
+'#      will be located successfully but a WindowsVP Exists will fail because 
+'#      of a lag time between when the object is created and when it is displayed.
+'#      For this reason, once the object has been found to exist we will also 
+'#      test for the Property "Visible" to be "True".  We will not exit with 
+'#      error, however, if this latter property test cannot be satisfied.  It is 
+'#      merely an attempt to more accurately wait for the given object.
+'#
+'#      The routine spends approx. .025 seconds on each of 3 different recognition 
+'#      methods trying to locate the object.  Thus consider a single search 
+'#      for the object to take up to around .08 seconds and then the search will
+'#      continue again until the full timeout value has been reached.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#
+'#      timeout     Optional Integer value in seconds to set as the timeout for 
+'#                  the operation.  15 seconds is the default timeout value.
+'#                  If the timeout value provided is < 1 or is otherwise 
+'#                  an invalid number then we exit with error.
+'#
+'# RETURNS:
+'#
+'#      -1 if input parameters are invalid
+'#       0 on successfully finding the object within the timeout period.
+'#       N error code returned from the SQAWaitForObject routine.
+'#       DDG_TIMEOUT = object not found or visible in timeout period.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForSQAObject (guiID, timeout)
+
+    Dim status    
+    Dim itemp
+    Dim weDisabled
+    
+    DDGWaitForSQAObject = -1
+    On Error Resume Next
+    if timeout = "" then timeout = 15
+    if IsNumeric(timeout) = 0 then timeout = 15
+    
+    itemp = CInt(timeout)
+    
+    if itemp < 1 then exit function
+    
+    if (Not IsObject(guiID)) or (TypeName(guiID) = "Nothing") then exit function 
+
+    DDGStartTimer itemp
+    weDisabled = False
+    if Log.Enabled then
+      weDisabled = True
+      Log.Enabled = False
+    end if    
+    do         
+        status = guiID.WaitProperty("Exists", True, 0)
+        if NOT status then BuiltIn.Delay 1000
+    loop while (NOT status AND(NOT DDGTimeExpired()))
+
+    if status then    
+      do         
+          status = guiID.WaitProperty("Visible", True, 0)
+          if NOT status then BuiltIn.Delay 1000
+      loop while (NOT status AND(NOT DDGTimeExpired()))
+      DDGWaitForSQAObject = 0  'whether Visible or not    
+    else
+      DDGWaitForSQAObject = DDG_TIMEOUT    
+    end if
+    
+    if weDisabled then Log.Enabled = True
+        
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForPropertyValue (guiID As String, property As String, _
+'#                                    value As String, Optional timeout) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given SQAObject and continues looking for a 
+'#      particular property value in that object.  
+'#      That is, watch an object's property until the value matches that provided
+'#      or until the timeout period is reached.
+'#      
+'#      The routine uses Robot's SQAWaitForPropertyValue.  
+'#
+'#      It spends .025 second on each of 3 different recognition 
+'#      methods trying to locate the object.  Thus consider a single search 
+'#      for the object to take up to around .08 seconds and then the search will
+'#      continue again until the full timeout value has been reached.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-senstive name of the property to check.
+'#
+'#      value       The case-sensitive String value we are looking for.
+'#
+'#
+'#      timeout     Optional Integer value in seconds to set as the timeout for 
+'#                  the operation.  15 seconds is the default timeout value.
+'#                  If the timeout value provided is < 1 or is otherwise 
+'#                  an invalid number then we exit with error.
+'#
+'# RETURNS:
+'#
+'#      -1 if input parameters are invalid
+'#       0 on successfully matching the property value.
+'#       N error code returned from the SQAWaitForPropertyValue routine.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForPropertyValue (guiID, myproperty, value, timeout)
+
+    Dim status   
+    Dim itemp
+    Dim vValue
+    Dim weDisabled
+    
+    DDGWaitForPropertyValue = -1
+    On Error Resume Next
+    if Not(IsObject(guiID)) then exit function
+    if myproperty = "" then exit function
+    if value = "" then exit function
+    
+    vValue = value
+    if IsMissing(timeout) then timeout = 15
+    if IsNumeric(timeout) = 0 then timeout = 15
+    
+    itemp = CInt(timeout)
+    
+    if itemp < 1 then exit function
+
+    DDGStartTimer itemp
+    weDisabled = False
+    if Log.Enabled then
+      weDisabled = True
+      Log.Enabled = False
+    end if
+            
+    do 
+        status = guiID.WaitProperty(myproperty, vValue, 0)
+        if Not status then BuiltIn.Delay 1000
+    loop while ((NOT status)AND(NOT DDGTimeExpired()))
+    
+    if weDisabled then Log.Enabled = True        
+    if status = True then DDGWaitForPropertyValue = 0    
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForSQAObjectGone (guiID As String, 
+'#                                    Optional timeout) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given SQAObject to go away.  That is, 
+'#      attempt to locate the object and return success if the object 
+'#      disappears within the timeout period.    
+'#
+'#      The routine attempts 3 variations of the recognition method trying to 
+'#      locate the object.  It then waits up to the timeout period for the 
+'#      object to disappear checking at approx. .025 second intervals.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#
+'#      timeout     Optional Integer value in seconds to set as the timeout for 
+'#                  the operation.  15 seconds is the default timeout value.
+'#                  If the timeout value provided is < 1 or is otherwise 
+'#                  an invalid number then we exit with error.
+'#
+'# RETURNS:
+'#
+'#      -2 if input parameters are invalid.
+'#
+'#      -1 the object remains and did not disappear within the timeout period.
+'#
+'#       0 on successfully finding the object and then seeing it disappear within 
+'#         the timeout period.
+'#
+'#       1 if the object could not be initially found. This could be caused by a
+'#         bad recognition method OR the object already disappeared prior to the
+'#         call.
+'#
+'#       N error code returned from the SQAFindObject routine if other than
+'#         SQAObjectNotFound.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      MAR 31, 2014    (Lei Wang) Fix problem of testing obejct gone.
+'#
+'############################################################################
+Function DDGWaitForSQAObjectGone (guiID, timeout)
+
+    Dim status   
+    Dim itemp
+    Dim weDisabled
+    
+    DDGWaitForSQAObjectGone = -2
+    On Error Resume Next
+    if timeout = "" then timeout = 15
+    if IsNumeric(timeout) = 0 then timeout = 15
+    
+    itemp = CInt(timeout)
+    if itemp < 1 then exit function
+
+    DDGWaitForSQAObjectGone = 1
+    if (Not(IsObject(guiID))) or (TypeName(guiID)="Nothing") then exit function
+    
+    weDisabled = False
+    if Log.Enabled then
+      weDisabled = True
+      Log.Enabled = False
+    end if
+    status = guiID.WaitProperty("Exists", True, 0)
+    if not status then 
+      if weDisabled then Log.Enabled = True
+      Exit Function
+    end if
+
+    DDGWaitForSQAObjectGone = -1    
+    DDGStartTimer itemp        
+    do
+        'If object's Exists is false, then the property 'Visible' is not accessible, but
+        'it seems that WaitProperty("Visible", False, 0) will return false; so we will
+        'consider the object is visible and continue wait until the timeout is reached.
+        'so before checking 'Visible', we check the property 'Exists', if 'Exists' is false
+        'then we consider the object is gone and exit the loop
+        status = guiID.WaitProperty("Exists", False, 0)
+        If status Then Exit Do
+        
+        status = guiID.WaitProperty("Visible", False, 0)
+        If status Then Exit Do Else  BuiltIn.Delay 1000 End If
+    loop while (NOT DDGTimeExpired())
+    if weDisabled then Log.Enabled = True
+    if status = True then DDGWaitForSQAObjectGone = 0
+
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForPropertyValueGone (guiID As String, property As String, _
+'#                                        value As String, Optional timeout) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given SQAObject's Property Value to go away.  
+'#      That is, attempts to locate the object and return success if the specified 
+'#      property value changes (or the object goes away) within the timeout period.
+'#      An intial test IS performed to see if the property value matched in 
+'#      the first place.
+'#
+'#      The routine attempts 3 variations of the recognition method trying to 
+'#      locate the object.  It then waits up to the timeout period for the 
+'#      object or the property to disappear, checking at approx. .025 second intervals.
+'#
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-senstive name of the property to check.
+'#
+'#      value       The case-sensitive String value we are watching to go away.
+'#
+'#      timeout     Optional Integer value in seconds to set as the timeout for 
+'#                  the operation.  15 seconds is the default timeout value.
+'#                  If the timeout value provided is < 1 or is otherwise 
+'#                  an invalid number then we exit with error.
+'#
+'# RETURNS:
+'#
+'#      -2 if input parameters are invalid.
+'#
+'#      -1 the property value was found but did not change within the timeout period.
+'#
+'#       0 on successfully finding the object and the property value and then 
+'#         seeing it disappear/or change within the timeout period.
+'#
+'#       1 if the object or specified property value was never initially found. 
+'#         This could be caused by a bad recognition method * OR * the object or 
+'#         property value had already disappeared/changed prior to the call.
+'#
+'#       N error code returned from the SQAFindObject routine if other than
+'#         SQAObjectNotFound.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForPropertyValueGone (guiID, myproperty, value, timeout)
+
+    Dim status    
+    Dim itemp
+    Dim recognition
+    Dim vValue
+    Dim weDisabled
+    
+    On Error Resume Next
+    DDGWaitForPropertyValueGone = -2
+    if (Not(IsObject(guiID))) then exit function
+    if myproperty = "" then exit function
+    if value = "" then exit function
+    if timeout = "" then timeout = 15
+    if IsNumeric(timeout) = 0 then timeout = 15    
+    itemp = CInt(timeout)    
+    if itemp < 1 then exit function
+
+    DDGWaitForPropertyValueGone = 1
+    weDisabled = False
+    if Log.Enabled then
+      weDisabled = True
+      Log.Enabled = False
+    end if    
+    if guiID.WaitProperty("Exists", False, 0) = True Then
+      if weDisabled then Log.Enabled = True 
+      exit Function
+    end if
+
+    DDGWaitForPropertyValueGone = -1    
+    vValue = value
+    DDGStartTimer itemp
+    
+    do 
+        status = guiID.WaitProperty(myproperty, vValue, 0)
+        if status = true then BuiltIn.Delay 1000
+    loop while ((status = True)AND(NOT DDGTimeExpired()))
+
+    if weDisabled then Log.Enabled = True
+    if status = true then Exit Function  'with -1, is not gone  
+    DDGWaitForPropertyValueGone = 0
+        
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForGUI (windowID As String, 
+'#                          componentID As String, 
+'#                          Optional timeout,
+'#                          Optional appMapPath) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given component in a given
+'#      window.  It will find this value in the Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a>
+'#      APPLICATION MAP file that should be valid prior to this call.  
+'#      Optionally, a different application map file path can be provided.
+'#      The routine waits for the given object to become valid within 
+'#      the timeout period.
+'#
+'# PARAMETERS:
+'#
+'#      windowID        String identifying the name of the window in which we 
+'#                      will find the componentID.  
+'#                      This is identical to a "Section" of an INI file which
+'#                      our application map files mimic.  This value must satisfy 
+'#                      the DDGGetGUIID windowID parameter.
+'#
+'#      componentID     String identifying the name of the component for which 
+'#                      we are seeking the recognition method (GUIID).
+'#                      This is identical to a "Key" of an INI file which our 
+'#                      application map files mimic.
+'#
+'#      timeout         Optional Integer value In seconds to set as the timeout for the 
+'#                      operation.  15 seconds is the default timeout value.
+'#
+'# RETURNS:
+'#
+'#      -1 if input parameters are invalid
+'#       0 on successfully finding the object within the timeout period.
+'#       N error code returned from the SQAWaitForObject routine.
+'#       DDG_TIMEOUT = Not Found in Timeout Period
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForGUI (windowID, componentID, timeout)
+
+    Dim guiID, atemp, starttime, idiff, validobj
+
+    DDGWaitForGUI = -1
+    On Error Resume Next
+    
+    'if ((Len(windowID)=0)OR(Len(componentID)=0)) then exit function    'allow lookthru
+    if componentID=""  then exit function
+    
+    if timeout = "" then 
+      timeout = 15
+    else
+      atemp = CInt(0)
+      atemp = CInt(timeout)
+      if((IsNumeric(atemp)) and (atemp > -1)) then timeout = atemp    
+    end if
+
+    DDGWaitForGUI = DDG_TIMEOUT
+    
+    starttime = Now()
+    idiff = -1
+    validobj = False
+    Set guiID = Nothing
+    while((Not validobj) and (idiff < timeout))
+      Set guiID = DDGGetObject(windowID, componentID)
+      if guiID.Exists <> True then
+         idiff = DateDiff("s", starttime, Now())
+      else
+          validobj = True
+      end if
+    wend
+    if idiff >= timeout then exit function
+    DDGWaitForGUI = DDGWaitForSQAObject( guiID, timeout )     
+    
+End Function
+'############################################################################
+'#
+'#  Function DDGWaitForGUIPropertyValue (windowID As String, 
+'#                          componentID As String, 
+'#                          property As String, 
+'#                          value As String, 
+'#                          Optional timeout,
+'#                          Optional appMapPath) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a particular GUI object's property value.
+'#      It will find this object in the Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a>
+'#      APPLICATION MAP file that should be valid prior to this call.  
+'#      Optionally, a different application map file path can be provided.
+'#      The routine will wait for the given object to become valid within 
+'#      the timeout period before checking the property value.
+'#
+'# PARAMETERS:
+'#
+'#      windowID        String identifying the name of the window in which we 
+'#                      will find the componentID.  
+'#                      This is identical to a "Section" of an INI file which
+'#                      our application map files mimic.  This must satisfy the
+'#                      DDGGetGUIID windowID parameter.
+'#
+'#      componentID     String identifying the name of the component for which 
+'#                      we are seeking the recognition method (GUIID).
+'#                      This is identical to a "Key" of an INI file which our 
+'#                      application map files mimic.
+'#
+'#      property        String which is the case-senstive name of the property to check.
+'#
+'#      value           The case-sensitive String value we are watching for.
+'#
+'#      timeout         Optional Integer value In seconds to set as the timeout for the 
+'#                      operation.  15 seconds is the default timeout value.
+'#
+'#      appMapPath      Optional String specifying the path and name to an 
+'#                      alternate appmap to use.  If this is not provided then the 
+'#                      value found in Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a> is used
+'#                      instead.
+'#                      The file path and name can be relative to the current SQA 
+'#                      Repository, project, or datapool.
+'#                      We use <a href="FileUtilities.htm#findsqafile">FindSQAFile</a> to validate
+'#                      the appMapPath provided. 
+'#
+'# RETURNS:
+'#
+'#      -1 if input parameters are invalid
+'#       0 on successfully finding the object and property value within the timeout period.
+'#       N error code returned from the WaitForPropertyValue routine.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForGUIPropertyValue (windowID, componentID, myproperty, value, timeout, _
+                        appMapPath)
+
+    Dim guiID
+
+    DDGWaitForGUIPropertyValue = -1
+    On Error Resume Next
+    
+    'if windowID="" then exit function  'allow lookthru
+    if componentID="" then exit function
+    if myproperty="" then exit function
+    if value="" then exit function
+    
+    if timeout = "" then timeout = 15
+
+    Set guiID = DDGGetObject(windowID, componentID)
+    if (Not(IsObject(guiID))) then exit function
+    DDGWaitForGUIPropertyValue = DDGWaitForPropertyValue( guiID, myproperty, value, timeout )
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForGUIGone (windowID As String, 
+'#                              componentID As String, 
+'#                              Optional timeout,
+'#                              Optional appMapPath) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given component in a given
+'#      window to disappear.  
+'#      It will find this component in the Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a>
+'#      APPLICATION MAP file that should be valid prior to this call.  
+'#      Optionally, a different application map file path can be provided.
+'#      The routine waits for the given object to disappear within 
+'#      the timeout period.
+'#
+'# PARAMETERS:
+'#
+'#      windowID        String identifying the name of the window in which we 
+'#                      will find the componentID.  
+'#                      This is identical to a "Section" of an INI file which
+'#                      our application map files mimic.
+'#
+'#      componentID     String identifying the name of the component for which 
+'#                      we are seeking the recognition method (GUIID).
+'#                      This is identical to a "Key" of an INI file which our 
+'#                      application map files mimic.
+'#
+'#      timeout         Optional Integer value In seconds to set as the timeout for the 
+'#                      operation.  15 seconds is the default timeout value.
+'#
+'#      appMapPath      Optional String specifying the path and name to an 
+'#                      alternate appmap to use.  If this is not provided then the 
+'#                      value found in Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a> is used
+'#                      instead.
+'#                      The file path and name can be relative to the current SQA 
+'#                      Repository, project, or datapool.
+'#                      We use <a href="FileUtilities.htm#findsqafile">FindSQAFile</a> to validate
+'#                      the appMapPath provided. 
+'#
+'# RETURNS:
+'#
+'#      -2 if input parameters are invalid.
+'#
+'#      -1 the object remains and did not disappear within the timeout period.
+'#
+'#       0 on successfully finding the object and then seeing it disappear within 
+'#         the timeout period.
+'#
+'#       1 if the object could not be initially found. This could be caused by a
+'#         bad recognition method OR the object already disappeared prior to the
+'#         call.
+'#
+'#       N error code returned from the SQAFindObject routine if other than
+'#         SQAObjectNotFound.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForGUIGone (windowID, componentID, timeout)
+
+    Dim guiID
+
+    DDGWaitForGUIGone = -2
+    On Error Resume Next
+    'if ((Len(windowID)=0)OR(Len(componentID)=0)) then exit function 'allow lookthru
+    if componentID = "" then exit function
+    
+    DDGWaitForGUIGone = 1             'object already gone
+    Set guiID = DDGGetObject(windowID, componentID)
+    'if(Not(IsObject(guiID)) or (TypeName(guiID)="Nothing")) then exit function
+    if guiID.Exists = False then exit function   
+    DDGWaitForGUIGone = DDGWaitForSQAObjectGone( guiID, timeout )
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGWaitForGUIPropertyValueGone (windowID As String, 
+'#                              componentID As String, 
+'#                              property As String, 
+'#                              value As String, 
+'#                              Optional timeout,
+'#                              Optional appMapPath) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Generates a wait state for a given SQAObject's Property Value to go away.  
+'#      That is, attempts to locate the object and return success if the specified 
+'#      property value changes (or the object goes away) within the timeout period.
+'#      An intial test IS performed to see if the property value matched in 
+'#      the first place.
+'#
+'#      It will find this component in the Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a>
+'#      APPLICATION MAP file that should be valid prior to this call.  
+'#      Optionally, a different application map file path can be provided.
+'#
+'# PARAMETERS:
+'#
+'#      windowID        String identifying the name of the window in which we 
+'#                      will find the componentID.  
+'#                      This is identical to a "Section" of an INI file which
+'#                      our application map files mimic.  The provided value 
+'#                      must satisfy the DDGGetGUIID windowID parameter.
+'#
+'#      componentID     String identifying the name of the component for which 
+'#                      we are seeking the recognition method (GUIID).
+'#                      This is identical to a "Key" of an INI file which our 
+'#                      application map files mimic.
+'#
+'#      property        String which is the case-senstive name of the property to check.
+'#
+'#      value           The case-sensitive String value we are watching to go away.
+'#
+'#      timeout         Optional Integer value In seconds to set as the timeout for the 
+'#                      operation.  15 seconds is the default timeout value.
+'#
+'#      appMapPath      Optional String specifying the path and name to an 
+'#                      alternate appmap to use.  If this is not provided then the 
+'#                      value found in Global <a href="ApplicationUtilities.htm#globals">AUCurrentAppMap</a> is used
+'#                      instead.
+'#                      The file path and name can be relative to the current SQA 
+'#                      Repository, project, or datapool.
+'#                      We use <a href="FileUtilities.htm#findsqafile">FindSQAFile</a> to validate
+'#                      the appMapPath provided. 
+'#
+'# RETURNS:
+'#
+'#      -2 if input parameters are invalid.
+'#
+'#      -1 the property value remains and did not change within the timeout period.
+'#
+'#       0 on successfully finding the object's property value and then seeing it 
+'#         change or the object disappear within the timeout period.
+'#
+'#       1 if the property value was not initially as expected or the object was not 
+'#         found. This could be caused by a bad recognition method OR the object 
+'#         disappeared or property value already changed prior to the call.
+'#
+'#       N error code returned from the WaitForPropertyValueGone routine if other than
+'#         SQAObjectNotFound.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGWaitForGUIPropertyValueGone (windowID, componentID, _
+                                         myproperty, value, _
+                                         timeout)
+   Dim guiID
+   DDGWaitForGUIPropertyValueGone = -2
+   On Error Resume Next
+    'if windowID="" then exit function  'we can allow for lookthru 
+    if componentID="" then exit function
+    if myproperty="" then exit function
+    if value="" then exit function    
+    if timeout = "" then timeout = 15
+    Set guiID = DDGGetObject(windowID, componentID)
+    if (Not(IsObject(guiID))) then exit function    
+    DDGWaitForGUIPropertyValueGone = DDGWaitForPropertyValueGone( guiID, myproperty, value, timeout )
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGSetGUIProperty (guiID As String, property As String, 
+'#                                    value As String) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Sets an object property value for a GUI object.  However, the routine
+'#      checks for unmodified, local (.\;), and desktop (\;) contexts for the 
+'#      object before returning a sqaObjectNotFound status (which SQA does not).
+'#
+'#      This routine is only for single value properties.  If a property  
+'#      value is actually a list or array this function will not support it.
+'#
+'#  
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#      property    String which is the case-sensitive name of the property 
+'#                  to set the value to. 
+'#
+'#      value       String to set the property value
+'#
+'# RETURNS:
+'#
+'#      -1      Invalid parameters
+'#      0       Success.
+'#
+'#      N       Failure status codes as describes by SQA's Object scripting 
+'#              routines.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#      AUG 26, 2001    (dharmesh4) Added Eval statement
+'#      May 28, 2012    (JunwuMa) Added support for the property dilimited with dot.
+'############################################################################
+Function DDGSetGUIProperty (guiID, myproperty, value)
+
+    Dim status
+      
+    On Error Resume Next
+    DDGSetGUIProperty = -1
+    if (Not(IsObject(guiID))) then exit function
+    
+    'Multilevel property like a.b.c delimited with "."
+    'e.g myproperty="a.b.c"  first part is "a.b"   lastpast is "c"
+    Dim dotPos   
+    Dim firstpart  ' representing the obj that owns the 
+    Dim lastpart   ' representing the property
+    Dim tmpobj
+    Dim pass  
+    
+    'find last .
+    dotPos = aqString.FindLast(myproperty, ".")
+    If dotPos > 0 then 'is Multilevel
+        firstpart = aqString.SubString(myproperty, 0, dotPos)
+        lastpart = aqString.SubString(myproperty,dotPos+1, aqString.GetLength(myproperty) - dotPos -1)
+
+        Set tmpobj = Eval(guiID.FullName & "." & firstpart) 
+        if Err.Number <> 0 then
+            Err.Clear
+            with guiID
+                Set tmpobj = Eval("." & firstpart)
+            end with
+        end if
+        pass = aqObject.SetPropertyValue(tmpobj, lastpart, value) 
+    else
+        'Call Test Complete's function to set property
+        pass = aqObject.SetPropertyValue(guiID, myproperty, value) 
+    End if
+      
+    If pass Then
+        SAFSDebug "Set value: " & value &" to property: " & myproperty, DEBUG_INFO
+        status = 0
+    Else
+        SAFSDebug "Can't set value: " & value &" to property: " & myproperty, DEBUG_WARN
+        status = Err.Number
+    End If
+        
+    DDGSetGUIProperty = status
+    
+End Function
+
+
+'############################################################################
+'#
+'#  Function DDGGetGUIEnvironment (guiID As String) As String
+'#
+'# DESCRIPTION:
+'#      
+'#      Attempts to retrieve or deduce the object's Environment.
+'#      Normally this is provided from the object's Environment property, 
+'#      however some configurations do not properly return a value for that 
+'#      property.  In that case, we must attempt to deduce it through other 
+'#      avenues.
+'#      
+'#      Typical Environment values are:
+'#      
+'#          Java, .NET, Visual Basic, Html, Win
+'#      
+'#      (The 'Win' environment is defined by us from SHELL32.DLL and other MS DLLs.)
+'#
+'#  
+'# PARAMETERS:
+'#
+'#      guiID       Object which is the TestComplete GUI object.
+'#
+'#
+'# RETURNS:
+'#
+'#      The String environment value or an empty string.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'############################################################################
+Function DDGGetGUIEnvironment (guiID)
+
+    Dim status
+    Dim guienv
+    Dim ahandle
+    Dim module
+    Dim aclass
+
+    ' not valid test complete code
+    
+        
+    On error resume next
+    status = DDGGetGUIPropertyString (guiID, "Environment", guiEnv)  'DDGUIUtilities.SBL
+    if (Len(guiEnv) > 0) then
+       DDGGetGUIEnvironment = guiEnv
+       exit function
+    end if
+    
+    'try to identify Win
+    status = DDGGetGUIPropertyString (guiID, "ModuleFileName", module)
+    if (InStr(1, module, "SHELL32.DLL", 1) > 0)  OR _
+       (InStr(1, module, "USER32.DLL", 1) > 0)  then               
+       DDGGetGUIEnvironment = "Win"
+       Exit Function
+    end if
+
+    'try to identify .NET
+    status = DDGGetGUIPropertyString (guiID, "hWnd", ahandle)
+    if (Len(ahandle) > 2) then
+        if Left(ahandle, 2) = "0x" then               
+           DDGGetGUIEnvironment = ".NET"
+           Exit Function
+        end if
+    end if
+        
+End Function
+'############################################################################
+'#
+'#  Function DDGGetFindWindow (windowRecStr As String) As windowObject
+'#
+'# DESCRIPTION:
+'#      
+'#      Attempts to find main window using the TC Find and FindChild API
+'#      
+'#      Typical Environment values are:
+'#      
+'#          Java, .NET, Visual Basic, Html, Win
+'#      
+'#      (The 'Win' environment is defined by us from SHELL32.DLL and other MS DLLs.)
+'#
+'#  
+'# PARAMETERS:
+'#
+'#  windowRecStr    Window recognition string to find main window. The string should
+'#                  have ":TFSM:" prefix and processName define.
+'#                  Example: :TFSM:processName=iexplore;objecttype=page;url=http://www.google.com/
+'#
+'# RETURNS:
+'#
+'#      The window object from Find or/and FindChild TC' API or Nothing.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel(dharmesh4)
+'# Orig   Date: APR 20, 2011
+'# History:
+'#
+'#      APR 20, 2011    Original Release
+'#      DEC 10, 2011    Added multi object properties support.
+'#      NOV 06, 2012    (JunwuMa) De-allocate dynamic array to eliminate potential memory leak
+'#
+'############################################################################
+Function DDGGetFindWindow (windowRecStr)  
+  Dim windowPropNames()   'dynamic array
+  Dim windowPropValues()  'dynamic array
+  Dim root, processName, processValue, counter, length, methodName,i,j
+  Dim newWindowPropNames()  'dynamic array
+  Dim newWindowPropValues() 'dynamic array
+  Dim recStrArray           'dynamic array
+  Dim depthLevelStr, depthLevel
+  Dim dbugStr
+  Dim win
+  
+  Set win = Nothing
+  Set DDGGetFindWindow = Nothing
+  processName = "processName" 
+  methodName = "DDGUIUtilites.DDGGetFindWindow() " 
+  depthLevel = SdepthLevel 
+  depthLevelStr = "depthLevel"  ' set level to speed up find process 
+
+  On Error Resume next  
+  SAFSDebug "Calling method " & methodName, DEBUG_INFO   
+  
+  recStrArray = Split(windowRecStr,";\;",-1,1)  
+
+  For j = 0 To UBound(recStrArray)
+    
+    DDGConvertStringToProArray recStrArray(j), windowPropNames,windowPropValues
+     
+    length = Ubound(windowPropNames)
+    
+    If (InStr(Ucase(recStrArray(j)),Ucase(processName)) > 0 ) Then      
+        length = length - 1
+    End If 
+            
+    If (InStr(Ucase(recStrArray(j)),Ucase(depthLevelStr)) > 0 ) Then      
+        length = length - 1
+    End If
+        
+    ReDim newWindowPropNames(length) 
+    ReDim newWindowPropValues(length) 
+    counter =0
+
+    For i = 0 To UBound(windowPropNames)
+      
+       If (StrComp(Ucase(windowPropNames(i)),Ucase(processName),1) = 0) or _
+           (StrComp(windowPropNames(i),depthLevelStr,1) = 0) Then
+           
+          If (StrComp(Ucase(windowPropNames(i)),Ucase(processName),1) = 0) Then
+              processValue = windowPropValues(i) 
+            
+              SAFSDebug methodName & "window recognition string: " _ 
+                  & processName& "=" &processValue , DEBUG_INFO 
+                         
+              Set root = Sys.Find(processName,processValue)            
+              If root.Exists <> True Then Exit Function
+          End If
+                                    
+          If (StrComp(windowPropNames(i),depthLevelStr,1) = 0) Then
+              depthLevel = windowPropValues(i)
+          End If
+       Else 
+            newWindowPropNames(counter) = windowPropNames(i) 
+            newWindowPropValues(counter) = windowPropValues(i)               
+            counter = counter + 1
+            dbugStr = dbugStr + windowPropNames(i) & "="  & windowPropValues(i) & ";"  
+       End If       
+    Next    
+    
+    If Len(Join(newWindowPropNames)) <> 0  Then
+                  
+      Set win = root.FindChild(newWindowPropNames, newWindowPropValues, depthLevel, True)
+      If TypeName(win) = "Nothing" Then Exit Function
+      'If win.Exists = False Then Exit Function
+      
+      dbugStr = dbugStr + "depthLevel="  & depthLevel
+      SAFSDebug  methodName & "window recognition string: "& dbugStr, DEBUG_INFO
+      dbugStr = "" 
+            
+      set root = win
+      
+    End If        
+  Next
+
+    Set DDGGetFindWindow = root
+
+    Erase windowPropValues    'release dynamic array
+    Erase windowPropNames     'release dynamic array
+    Erase newWindowPropValues 'release dynamic array
+    Erase newWindowPropNames  'release dynamic array
+    Erase recStrArray   'release allocated memory  
+End Function
+
+'############################################################################
+'#
+'#  Function DDGGetFindComponent (windowObject as Object, cmpRecStr As String ) 
+'#  As componentObject
+'#
+'# DESCRIPTION:
+'#      
+'#      Attempts to find main window's components(child objects)using the TC FindChild API
+'#      
+'#      Typical Environment values are:
+'#      
+'#          Java, .NET, Visual Basic, Html, Win
+'#      
+'#      (The 'Win' environment is defined by us from SHELL32.DLL and other MS DLLs.)
+'#
+'#  
+'# PARAMETERS:
+'#
+'#  windoObject   Main window object
+'#  cmpRecStr     Component recognition string to find components. The string should
+'#                have ":TFSM:" prefix
+'#                  Example: :TFSM:tagName=A;namePropStr=advanced_search*
+'#
+'# RETURNS:
+'#
+'#      The window object from Find or/and FindChild TC' API or Nothing
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel(dharmesh4)
+'# Orig   Date: APR 20, 2011
+'# History:
+'#
+'#      APR 20, 2011    Original Release
+'#      DEC 10,2011     Added multi object properties support.
+'#      NOV 06, 2012    (JunwuMa) De-allocate dynamic array to eliminate potential memory leak 
+'#
+'############################################################################
+Function DDGGetFindComponent (windowObject, cmpRecStr)
+  Dim methodName, depthLevel, counter, i, j, depthLevelStr, length
+  Dim cmpPropNames()    'dynamic array
+  Dim cmpPropValues()   'dynamic array 
+  Dim newCmpPropNames() 'dynamic array 
+  Dim newCmpPropValues()'dynamic array 
+  Dim recStrArray       'dynamic array 
+  Dim dbugStr
+  Dim comp
+  
+  Set comp = Nothing
+  Set DDGGetFindComponent = Nothing
+  depthLevel = SdepthLevel 
+  depthLevelStr = "depthLevel"  ' set level to speed up find process
+  methodName = "DDGUIUtilites.DDGGetFindComponent() "  
+ 
+  SAFSDebug "Calling method " & methodName, DEBUG_INFO
+
+  On Error Resume next
+  recStrArray = Split(cmpRecStr,";\;",-1,1)  
+
+  For j = 0 To UBound(recStrArray)
+  
+    DDGConvertStringToProArray recStrArray(j), cmpPropNames,cmpPropValues
+  
+    If (InStr(Ucase(recStrArray(j)),Ucase(depthLevelStr)) > 0 ) Then
+      length = Ubound(cmpPropNames)- 1
+     Else 
+      length = Ubound(cmpPropNames)
+    End If
+
+    ReDim newCmpPropNames(length) 
+    ReDim newCmpPropValues(length)    
+    counter =0
+
+    For i = 0 To UBound(cmpPropNames)
+                    
+        If (StrComp(cmpPropNames(i),depthLevelStr,1) = 0) Then
+            depthLevel = cmpPropValues(i)                
+        Else 
+            newCmpPropNames(counter) = cmpPropNames(i) 
+            newCmpPropValues(counter) = cmpPropValues(i)                           
+            counter = counter + 1       
+            dbugStr = dbugStr + cmpPropNames(i) & "="  & cmpPropValues(i) & ";"  
+        End If         
+    Next  
+  
+    dbugStr = dbugStr + "depthLevel=" & depthLevel
+    SAFSDebug methodName & "component recognition string: " & dbugStr, DEBUG_INFO    
+    dbugStr = ""
+                       
+    Set comp = windowObject.FindChild(newCmpPropNames, newCmpPropValues, depthLevel, True) 
+    If TypeName(comp) = "Nothing" Then exit Function
+    'If comp.Exists = False Then  exit Function
+ 
+    Set windowObject = comp       
+  Next 
+  
+    Set DDGGetFindComponent = windowObject
+    
+    Erase recStrArray
+    Erase newCmpPropValues  
+    Erase newCmpPropNames
+    Erase cmpPropValues
+    Erase cmpPropNames
+End Function
+
+'#############################################################################
+'# PARAMETERS:
+'#
+'#  windowID        Main window ID
+'#  cmponentID      Component ID
+'#
+'#  Both of them are the ID defined in the Map file. According to the ID, a
+'#  recognition string can be retrieved from the Map file.
+'#
+'# RETURNS:
+'#
+'#      The object from Find or/and FindChild TC' API or EVAL(recstr) standard TC way.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel(dharmesh4)
+'# Orig   Date: APR 20, 2011
+'# History:
+'#
+'#      APR 20, 2011    Original Release
+'#
+'############################################################################
+Function DDGGetObject(windowID, componentID)
+  Dim win, comp  
+  Dim winrecstr,comprecstr  
+     
+  Set DDGGetObject = Nothing
+  
+  On Error Resume next 
+
+  winrecstr = DDGGetGUIID(windowID, windowID, "")
+  comprecstr = DDGGetGUIID(windowID, componentID, "")
+  
+  Set DDGGetObject =  DDGGetObjectByRec(winrecstr, comprecstr)
+End Function
+
+'#############################################################################
+'# PARAMETERS:
+'#
+'#  component       Test Complete's test object
+'#  times           Integer, how many times the highlight will flash
+'#  color           Integer, the color of the highlight rectangle, It can be
+'#                  got by function GetRGBColor()
+'#
+'#  Highlight the component with a colored rectangle.
+'#############################################################################
+Function HighLight(component, times, color)
+    If IsObject(component) And component.Exists Then
+        Sys.HighlightObject component, times , color
+    Else
+        SAFSDebug "Component is not object or not exist.", DEBUG_DEBUG  
+    End If
+End Function
+
+'#############################################################################
+'# PARAMETERS:
+'#
+'#  winrecstr       window's recognition string
+'#  comprecstr      component's recognition string               
+'#
+'# RETURNS:
+'#
+'#      The object from Find or/and FindChild TC' API or EVAL(recstr) standard TC way.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel(dharmesh4)
+'# Orig   Date: APR 20, 2011
+'# History:
+'#
+'#      APR 20, 2011    Original Release
+'#      JUN 21, 2012    (Lei Wang) Update to support CurrentWindow
+'#      AUG 01, 2013    (Lei Wang) Update to support RS starting with "Sys.Browser"
+'#
+'############################################################################
+Function DDGGetObjectByRec(winrecstr, comprecstr)
+  Dim win, comp, methodName    
+
+  On Error Resume next
+  methodName = "DDGUIUtilites.DDGGetObjectByRec() "
+
+  Set DDGGetObjectByRec = Nothing  
+
+  If (winrecstr = "" or comprecstr = "") Then exit function 
+
+  SAFSDebug methodName &": recognition strings,Win= "&winrecstr &" Comp=" & comprecstr, DEBUG_INFO
+
+  'Calling Sys.Refresh was for refreshing processes to make Flex menu items could be found.
+  'However, it takes much time to call it frequently in every component command.
+  'So it should not be called at this level, comment it out (JunwuMa 12/05/2012)
+  'Sys.Refresh
+  
+  If StringEqualIgnoreCase(winrecstr, TYPE_CURRENTWINDOW) Then
+    'Try to get the current window object
+    SAFSDebug "Try to get the CurrentWindow.", DEBUG_DEBUG
+    Set win = Sys.Desktop.ActiveWindow
+    If Not IsObject(win) Or win Is Nothing Then
+      Set win = Sys.Desktop.FocusedWindow
+    End If  
+  Else
+    ' TFSM=True from ini file
+    ' DDG_TC_FIND_SEARCH_MODE=:TFSM: in rec string 
+    ' Is not a Test Complete Recognition String
+    If (STFSMOnly = True or InStr(winrecstr,DDG_TC_FIND_SEARCH_MODE) = 1 or Not IsTestCompleteRS(winrecstr) ) Then
+      Set win = DDGGetFindWindow(winrecstr)    
+    Else 
+      Set win = Eval(winrecstr)
+    End If
+  End If
+
+  If win.Exists Then
+    SAFSDebug "Got window '"&win.FullName&"'", DEBUG_INFO
+  Else
+    SAFSDebug "Fail to get window.", DEBUG_WARN
+    'Exit Function
+  End If
+  
+  If winrecstr = comprecstr Then
+    Set DDGGetObjectByRec = win
+  Else
+    If (STFSMOnly = True or InStr(comprecstr,DDG_TC_FIND_SEARCH_MODE) = 1 or Not IsTestCompleteRS(comprecstr)) Then
+      Set comp = DDGGetFindComponent(win,comprecstr) 
+    Else 
+      Set comp = Eval(comprecstr)
+    End If
+
+    If comp.Exists Then
+      SAFSDebug "Got component '"&comp.FullName&"'", DEBUG_INFO
+    Else
+      SAFSDebug "Fail to get component.", DEBUG_WARN
+      Exit Function
+    End If        
+    
+    Set DDGGetObjectByRec = comp  
+  End If
+
+End Function
+
+'#############################################################################
+'# Function IsTestCompleteRS(recognitionString)
+'#  
+'# DESCRIPTION:
+'#      If the Recognition String start with certain prefix, then it is
+'#      considered as "Test Complete Recognition String".
+'#      Now the prefix can be "Sys.Process" or "Sys.Browser"
+'#
+'############################################################################
+Function IsTestCompleteRS(recognitionString)
+  IsTestCompleteRS = False
+  If InStr(recognitionString,DDG_TC_REGULAR_STR_PREFIX)=1 Then
+    IsTestCompleteRS = True
+  End If
+End Function
+
+'#############################################################################
+'# Sub Activate (windowObject as Object) As window object
+'#  
+'#
+'# DESCRIPTION:
+'#      
+'#      Attempts to activate window object so it stay from of all other app.
+'#      
+'#      This action brings the window to the top (that is, in front of other 
+'#      windows) if it is a top-level window or an MDI-child window. If the 
+'#      window is minimized, Activate first brings it back to the normal state. 
+'#      This action has no effect on popup windows and controls
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel(dharmesh4)
+'# Orig   Date: SEP 09, 2011
+'# History:
+'#
+'#      SEP 09, 2011    Original Release
+'#
+'############################################################################
+Sub Activate(winobj)
+
+  On Error Resume Next
+  
+  ' HTML and FLEX domains
+  If .environment = DDU_FLEX_ENVIRONMENT OR _
+     .environment = DDU_HTML_ENVIRONMENT Then
+  
+    Do While True
+       If winobj.Parent is Nothing Then
+          Exit Sub
+       End If
+       If InStr(LCase(winobj.Name),"process") > 0 Then
+          Exit Do
+       End IF
+       Set winobj = winobj.Parent
+    Loop
+    
+     set winobj = winobj.IEFrame(0)
+  End If
+  
+  ' JAVA domain
+  If .environment = DDU_JAVA_ENVIRONMENT Then
+        ' add java code 
+  End If
+  
+  ' Do activate 
+  winobj.Activate()
+
+End Sub
+
+'#############################################################################
+'# Sub DDGActivateNotCurrentWindow (winobj as Object) As window object
+'#  
+'#
+'# DESCRIPTION:
+'#      
+'#      Attempts to .Activate provided window object only if it was NOT derived 
+'#      as a result of a 'CurrentWindow' recognition string.
+'#      
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Carl Nagle (Carl Nagle)
+'# Orig   Date: JUN 21, 2013
+'# History:
+'#
+'#      JUN 21, 2013    Original Release
+'#
+'############################################################################
+Sub DDGActivateNotCurrentWindow(winobj)
+
+  On Error Resume Next
+  
+  if not StringEqualIgnoreCase(otrd.windowname, TYPE_CURRENTWINDOW) then
+    winobj.Activate
+  end if
+  
+End Sub
+
+'#############################################################################
+'# Sub DDGFocusNotCurrentWindow (compobj as Object) As child component object
+'#  
+'#
+'# DESCRIPTION:
+'#      
+'#      Attempts to .SetFocus provided comp object only if it was NOT derived 
+'#      as a result of a 'CurrentWindow' recognition string.
+'#      
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Carl Nagle (Carl Nagle)
+'# Orig   Date: JUN 21, 2013
+'# History:
+'#
+'#      JUN 21, 2013    Original Release
+'#
+'############################################################################
+Sub DDGSetFocusNotCurrentWindow(compobj)
+
+  On Error Resume Next
+  
+  if not StringEqualIgnoreCase(otrd.compname, TYPE_CURRENTWINDOW) then
+    compobj.SetFocus
+  end if
+  
+End Sub
+
+'#############################################################################
+'# Function GetXYPosition (object,positionName)
+'#  
+'#
+'# DESCRIPTION:
+'#      
+'#      Get XY absolute postion base on top left, top center etc....           
+'#      
+'#
+'# RETURN:
+'#
+'#     Array of X and Y coordinates
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Dharmesh Patel(dharmesh4)
+'# Orig   Date: SEP 21, 2011
+'# History:
+'#
+'#      SEP 21, 2011    Original Release
+'#
+'############################################################################
+Function GetXYPosition(object, positionName)
+  
+  Dim xy(2)   
+  
+  Select Case UCase(positionName)
+  
+    Case TOP_LEFT  '0 doesn't work
+          xy(0) = 1  
+          xy(1) = 1
+    Case TOP_CENTER 
+          xy(0) = object.Width/2
+          xy(1) = 0
+    Case TOP_RIGHT 
+          xy(0) = object.Width
+          xy(1) = 0
+    Case LEFT_CENTER 
+          xy(0) = 0  
+          xy(1) = object.Height/2 
+    Case CENTER 
+          xy(0) = object.Width/2   
+          xy(1) = object.Height/2 
+    Case RIGHT_CENTER 
+          xy(0) = object.Width
+          xy(1) = object.Height/2
+    Case BOTTOM_LEFT 
+          xy(0) = 0
+          xy(1) = object.Height
+    Case BOTTOM_CENTER 
+          xy(0) = object.Width/2
+          xy(1) = object.Height        
+    Case BOTTOM_RIGHT 
+          xy(0) = object.Width
+          xy(1) = object.Height
+    Case Else  ' default center
+          xy(0) = object.Width/2   
+          xy(1) = object.Height/2    
+   End Select
+   
+  GetXYPosition = xy
+  
+End Function
+
+
+'#############################################################################
+'# Function Sleep (millis)
+'#
+'# DESCRIPTION:
+'#      
+'#      Sleep for milliseconds, this function will not pause exactly the millisecond
+'#      as parameter, but it will convert the parameter to seconds (round to larger)         
+'#
+'# PARAMETERS:
+'#
+'#      millis, int, milliseconds to wait
+'#
+'# RETURN:
+'#      none
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: Lei Wang
+'# Orig   Date: MAY 11, 2012
+'# History:
+'#
+'#      MAY 11, 2012    Original Release
+'#
+'############################################################################
+Function Sleep(millis)
+    Dim StartTime, TimeoutSeconds
+    
+    ' Convert the timeout value from milliseconds to seconds (round to larger)
+    TimeoutSeconds = millis / 1000
+    If millis Mod 1000 <> 0 Then
+      TimeoutSeconds = TimeoutSeconds + 1
+    End If
+     
+    StartTime = Now
+    Do
+        Err.Clear
+    Loop While (Err.Number <> 0) And (DateDiff("s", StartTime, Now) < TimeoutSeconds)
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Try to get the string text of the tc object.
+'#      
+'# PARAMETERS:
+'#      tcObject  In   A TC object.
+'#
+'# ERRORS:
+'#      none
+'#
+'# History:
+'#      JUL 31, 2012    (Lei Wang) Original Release
+'#      MAR 19, 2014    (Lei Wang) Modify to get text value from FlexObject.listData.label or FlexObject.data.value('xml data')
+'#      JUN 03, 2014    (Lei Wang) FlexObject.data.value('xml data') may NOT be complete and not valid, modify to make it valid.
+'#
+'############################################################################
+Function DDGGetTextValue(tcObject)
+    Dim value
+    Dim propArray, valueArray, textObj
+    Dim xmldoc, firstChild, node
+    Dim tagEndPosition, xmlstring
+    
+    On Error Resume Next
+    With otrd
+        If .environment = DDU_FLEX_ENVIRONMENT Then    
+            If aqObject.IsSupported(tcObject, "Caption") Then value = tcObject.Caption
+            If value="" And aqObject.IsSupported(tcObject, "ObjectLabel") Then value = tcObject.ObjectLabel
+            If value="" And DDGIsGUIPropertyExist(tcObject, "FlexObject.label") Then value = tcObject.FlexObject.label 
+            If value="" And DDGIsGUIPropertyExist(tcObject, "FlexObject.listData.label") Then value = tcObject.FlexObject.listData.label
+            If value="" And DDGIsGUIPropertyExist(tcObject, "FlexObject.data.value") Then
+                xmlstring = tcObject.FlexObject.data.value
+                Set xmldoc = StringUtilities.LoadXML(xmlstring)
+                
+                If (xmldoc Is Nothing) Then
+                    'sometimes tcObject.FlexObject.data.value is incomplete and it is not a valid xml doc string.
+                    'trancate the string at the first '>', and repalce '>' by '/>' to create a new xml string as <xxx.../>
+                    SAFSDebug "Cannot load xml with '" & xmlstring &"'", DEBUG_WARN
+                    tagEndPosition = aqString.Find(xmlstring, ">")
+                    If tagEndPosition <> -1 Then
+                        xmlstring = aqString.SubString(xmlstring, 0, tagEndPosition+1)
+                        xmlstring = aqString.Replace(xmlstring, ">", "/>")
+                        Set xmldoc = StringUtilities.LoadXML(xmlstring)
+                    Else
+                        SAFSDebug "Cannot find '>' in string '" & xmlstring &"'", DEBUG_DEBUG
+                    End If
+                End If
+                
+                If (xmldoc Is Nothing) Then
+                    SAFSDebug "Cannot load xml with '" & xmlstring &"'", DEBUG_ERROR
+                Else
+                    Set firstChild = xmldoc.firstChild
+                    If Not(firstChild Is Nothing) Then
+                        'To get the node's value shown on application, it depends on the format of the xml
+                        'For this case, first node's attribute 'label' contains that value
+                        Set node = StringUtilities.getNode(firstChild, "//@label")
+                        If Not(node Is Nothing) Then value = StringUtilities.getNodeValue(node)
+                        If value="" Then
+                            SAFSDebug "Cannot get value from attribut 'label', see detail of node as below: " , DEBUG_DEBUG
+                            SAFSDebug StringUtilities.NodeToString(firstChild) , DEBUG_DEBUG
+                        End If
+                    End If
+                End If
+            End If
+            'Move 'ObjectIdentifier' to the last position, it may contain some value, but not wanted
+            If value="" And aqObject.IsSupported(tcObject, "ObjectIdentifier") Then value = tcObject.ObjectIdentifier                  
+        ElseIf .environment = DDU_NET_ENVIRONMENT Then
+            'Try some properties to get value
+            If aqObject.IsSupported(tcObject, "WPFControlText") Then value = tcObject.WPFControlText
+            If value="" And aqObject.IsSupported(tcObject, "Text") Then value = tcObject.Text
+            
+            'Try to get some possible child to get the value
+            If value="" Then
+                propArray = Array("ClrClassName", "Visible")
+                valueArray = Array("*Label*", True)
+                Set textObj = tcObject.FindChild(propArray, valueArray, 5)
+            
+                If Not textObj.Exists Then
+                    valueArray(0) = "*TextBlock*"
+                    Set textObj = tcObject.FindChild(propArray, valueArray, 5)            
+                End If
+            
+                If textObj.Exists Then
+                    value = textObj.WPFControlText
+                    If value="" Then value = textObj.Text
+                End If            
+            End If
+       
+        Else
+            SAFSDebug "DDGUIUtilities.DDGGetTextValue:Need new implementation for domain '"&.environment&"'", DEBUG_DEBUG
+        End If
+    End With
+    
+    DDGGetTextValue = value    
+    
+End Function
+
+'############################################################################
+'# DESCRIPTION:
+'#      Try to get an array of possible string text of the tc object.
+'#      
+'# PARAMETERS:
+'#      tcObject  In    A TC object.
+'#      values    Out   An array of possible string text of tcObject
+'#
+'# ERRORS:
+'#      none
+'#
+'# History:
+'#      MAR 19, 2014     (Lei Wang) Original Release
+'#
+'############################################################################
+Sub DDGGetTextValues(tcObject, ByRef values())
+    Dim propArray, valueArray, textObj, value
+    Dim xmldoc, firstChild, node
+    
+    On Error Resume Next
+    With otrd
+        If .environment = DDU_FLEX_ENVIRONMENT Then
+            ReDim values(6)
+            If aqObject.IsSupported(tcObject, "Caption") Then values(0)=tcObject.Caption
+            If aqObject.IsSupported(tcObject, "ObjectLabel") Then values(1) = tcObject.ObjectLabel
+            If DDGIsGUIPropertyExist(tcObject, "FlexObject.label") Then values(2) = tcObject.FlexObject.label 
+            If DDGIsGUIPropertyExist(tcObject, "FlexObject.listData.label") Then values(3) = tcObject.FlexObject.listData.label
+            If DDGIsGUIPropertyExist(tcObject, "FlexObject.data.label") Then values(4) = tcObject.FlexObject.data.label
+            If DDGIsGUIPropertyExist(tcObject, "FlexObject.data.value") Then
+                Set xmldoc = StringUtilities.LoadXML(tcObject.FlexObject.data.value)
+                If Not (xmldoc Is Nothing) Then
+                    Set firstChild = xmldoc.firstChild
+                    If Not(firstChild Is Nothing) Then
+                        'To get the node's value shown on application, it depends on the format of the xml
+                        'For this case, first node's attribute 'label' contains that value
+                        Set node = StringUtilities.getNode(firstChild, "//@label")
+                        If Not(node Is Nothing) Then value = StringUtilities.getNodeValue(node)
+                        If (Not value="") Then values(5)=value
+                        If value="" Then
+                            SAFSDebug "Cannot get value from attribut 'label', see detail of node as below: " , DEBUG_DEBUG
+                            SAFSDebug StringUtilities.NodeToString(firstChild) , DEBUG_DEBUG
+                        End If
+                    End If
+                End If                
+            End If
+            If aqObject.IsSupported(tcObject, "ObjectIdentifier") Then values(6) = tcObject.ObjectIdentifier  Else values(5)="" End If                
+        ElseIf .environment = DDU_NET_ENVIRONMENT Then
+            ReDim values(3)
+            'Try some properties to get value
+            If aqObject.IsSupported(tcObject, "WPFControlText") Then values(0) = tcObject.WPFControlText
+            If aqObject.IsSupported(tcObject, "Text") Then values(1) = tcObject.Text
+            
+            'Try to get some possible child to get the value
+            propArray = Array("ClrClassName", "Visible")
+            valueArray = Array("*Label*", True)
+            Set textObj = tcObject.FindChild(propArray, valueArray, 5)
+            
+            If Not textObj.Exists Then
+                valueArray(0) = "*TextBlock*"
+                Set textObj = tcObject.FindChild(propArray, valueArray, 5)            
+            End If
+            
+            If textObj.Exists Then
+                If aqObject.IsSupported(textObj, "WPFControlText") Then values(2) = textObj.WPFControlText
+                If aqObject.IsSupported(textObj, "Text") Then values(3) = textObj.Text
+            End If
+
+        Else
+            SAFSDebug "DDGUIUtilities.DDGGetTextValues:Need new implementation for domain '"&.environment&"'", DEBUG_DEBUG
+        End If
+    End With
+
+End Sub
+
+'############################################################################
+'# DESCRIPTION:
+'#      Try to test if the object is a dojo object.
+'# PARAMETERS:
+'#      tcObject  In   A TC object.
+'# ERRORS:
+'#      none
+'# History:
+'#      DEC 05, 2013    (Lei Wang) Original Release
+'#
+'############################################################################
+Function DDGIsDojoObject(tcObject)
+    On Error Resume Next
+    DDGIsDojoObject = False
+    With otrd
+        If .environment = DDU_HTML_ENVIRONMENT Then
+            If aqObject.IsSupported(tcObject, "className") Then
+                'If the classname begins with 'dijit', we consider it as dojo object
+                If StringUtilities.StartsWith(tcObject.className, "dijit") Then
+                    DDGIsDojoObject = True
+                End If
+            End If
+        End If
+    End With
+End Function

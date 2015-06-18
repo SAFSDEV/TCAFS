@@ -1,0 +1,1757 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    WINDOWFUNCTIONS.SBL  SCRIPT
+'# 
+'#                                                                         
+'# MODULE DESCRIPTION:
+'#
+'#      Routines and utilities to work on SQA Type=WINDOW objects in 
+'#      Data-Driven Automation.
+'#
+'# SUPPORTED ACTION COMMANDS:
+'#
+'#      CloseWindow             'Send a CloseWindow command to the window
+'#
+'#      SelectMenuID            'select a menuitem by its ID
+'#      SelectMenuItem          'select a text menuitem
+'#      SelectMenuItemContains  'select a menuitem via a partial text match
+'#
+'#      SetPosition             'set the size, position, and state of a window
+'#      Minimize                'minimizes the window
+'#      Maximize                'maximizes the window
+'#      Restore                 'restores the window
+'#
+'#      VerifyImage             'CompareImage OR RegionImage against a stored VP
+'#      VerifyOCRValue          'Retrieve and compare OCR text with an ImageVP
+'#
+'#      VerifyMainMenu          'verify the full menu structure against bench file
+'#      VerifyMenuID            'verify the state of a menuitem by its ID
+'#      VerifyMenuItem          'verify the state of a text menuitem 
+'#      VerifyMenuItemContains  'verify the state of a menuitem found via partial text match
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      JUL 01, 2010    (Carl Nagle) Enhanced for SAFS Debug Log and fixed CloseWindow
+'#      NOV 14, 2011    (Lei Wang) Modify function SetWindowPosition(): convert the old RC source code.
+'# 
+'##############################################################################
+
+'# COPYRIGHT Copyright_SAS.TXT
+
+
+'# PUBLIC DEPENDENCIES
+
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT LogUtilities_X
+'USEUNIT ApplicationUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT GenericMasterFunctions_X
+'USEUNIT StepDriver_X
+'USEUNIT MenuUtilities_X
+'USEUNIT DDGUIUtilities_X
+
+'USEUNIT DDGUIUtilities
+'USEUNIT GenericMasterFunctions
+'USEUNIT MenuUtilities
+'USEUNIT MenuUtilities_X 
+'USEUNIT LogUtilities
+'USEUNIT StringUtilities
+'USEUNIT GenericObjectFunctions
+
+'# FORWARD DECLARATIONS
+
+Function makeChildWindow (child) 
+    Dim index
+    Dim position
+    Dim target
+    
+    target = child
+    index = InStr(1, child, ";\;", 1)
+    if index > 1 then                               'strip parent info off
+        target = Mid(child, index + 3)
+        index = InStr(1, target, "Window;", 1)
+        position = ""
+        if index > 0 then                           'strip Type info off
+            position = Mid(target, index, 12)
+        else                                        'strip off alternate Type info
+            index = InStr(1, target, "Type=Window", 1)
+            if index > 0 then position = Mid(target, index, 12)
+        end if
+                
+        if position <> "" then target = FindAndReplace(target, position, "")
+              
+        if InStr(1, target, ";ChildWindow", 1) < 1 then 
+            target = target &";ChildWindow"         'add ;ChildWindow
+        end if
+    end if
+    makeChildWindow = target
+End Function
+
+'############################################################################
+'#
+'#   Sub VerifyImage()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Performs a WindowVP CompareImage OR a RegionImageVP on an object.  
+'#      The benchmark VP must already exist and be an asset of the currently 
+'#      running script.
+'#
+'#      A RegionImageVP can be accomplished by having the name of the VP as an item 
+'#      under the component in the application map.  The item's value must be 
+'#      the coordinate values required by the RegionImageVP (i.e. "65,100,200,250").
+'#
+'#      Example 1: Perform a WindowVP CompareImage
+'#      
+'#          MainWindow SomeWindowObject VerifyImage StoredVP
+'#
+'#          (no StoredVP item found in the app map under SomeWindowObject)
+'#      
+'#      The named VP (StoredVP) must not exist in the application map.  The 
+'#      entire panel/object of SomeWindowObject will be captured and compared 
+'#      against the StoredVP baseline which must already exist as an asset of the
+'#      currently running script.
+'#
+'#      Example 2: Perform a RegionImageVP on a particular area of the screen
+'#
+'#          MainWindow SomeWindowObject VerifyImage StoredVP
+'#
+'#          (StoredVP found as:
+'#
+'#               "65,100,200,250"   OR
+'#               "Coords=65,100,200,250"
+'#
+'#           in the SomeWindowObject section of the app map)
+'#
+'#      The named VP (StoredVP) is found to exist in the application map as a
+'#      subitem in the SomeWindowObject section of the map.  This causes 
+'#      the routine to attempt a RegionImageVP using the map's value of the StoredVP 
+'#      item as the coordinates for the region to capture.  StoredVP is ALSO the 
+'#      name of the VP which must already exist as an asset of the currently 
+'#      running script.
+'#      
+'#
+'#      The routine expects that the menu's Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      name of the pre-existing VP asset stored in the currently running script.
+'#              If the name also exists in the app map under the component then 
+'#              a RegionImageVP will be attempted.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyImage()
+
+Dim VPIN
+Dim Result
+Dim region
+
+'$NoCStrings
+
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate bench VP image specification
+        VPIN = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if VPIN = "" then 
+            LogMessage "VerifyImage missing required VP Name "& _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+        
+        'if the VP name exists in the appmap then it should be a REGIONVP
+        region = DDGGetGUIID(.compname, VPIN, "")
+        
+        if region = "" then        
+            Result = Regions.Compare(.compGUIID, VPIN)
+        else
+            if InStr(1, region, "Coords=", 1) = 0 then
+                Dim coords
+                coords = GetTrimmedQuotedField(region, 2, "=")
+                Regions.Compare .compGUIID, VPIN 
+                'Result = RegionVP(CompareImage, "", "VP="& VPIN &";Wait=2,10;Coords="& region)
+'            else
+'                Result = RegionVP(CompareImage, "", "VP="& VPIN &";Wait=2,10;"& region)
+            end if
+        end if
+        
+        if Result = 1 then
+            .statuscode = SDNoScriptFailure
+            LogMessage .windowname &" Image compare matched Bench:"& VPIN, _
+                       PASSED_MESSAGE, ""
+        else
+            LogMessage "VerifyImage failure for "& .windowname & _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+        end if
+
+    End With    
+
+End sub
+
+
+
+'############################################################################
+'#
+'#   Sub VerifyOCRValue()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Performs an UNLOGGED WindowVP CompareImage OR a RegionImageVP on an 
+'#      object then attempts to retrieve and compare OCR text to the expected 
+'#      value provided.  
+'#      The benchmark VP must already exist and be an asset of the currently 
+'#      running script.
+'#
+'#      A RegionImageVP can be accomplished by having the name of the VP as an item 
+'#      under the component in the application map.  The item's value must be 
+'#      the coordinate values required by the RegionImageVP 
+'#      (i.e. "Coords=65,100,200,250").
+'#
+'#      EXAMPLE 1 : Perform a WindowVP CompareImage before OCR Test
+'#      
+'#   Record: t, MainWindow, SomeWindowObject, VerifyOCRValue, StoredVP, 1, "Expected Text"
+'#
+'#          (no StoredVP item found in the app map under SomeWindowObject)
+'#      
+'#      The named VP (StoredVP) must not exist in the application map if you 
+'#      intend to compare the entire window.  The entire panel/object of 
+'#      SomeWindowObject will be captured and compared against the StoredVP 
+'#      baseline.  This VP must already exist as an asset of the
+'#      currently running script.
+'#
+'#
+'#      EXAMPLE 2 : Perform a RegionImageVP before the OCR test
+'#
+'#   Record: t, MainWindow, SomeWindowObject, VerifyOCRValue, StoredVP, DataField, "Expected Text"
+'#
+'#          StoredVP found in Application Map like below:
+'#
+'#          [SomeWindowObject]
+'#          SomeWindowObject="Type=Something...."
+'#          StoredVP="Coords=65,100,200,250"        --- invokes a RegionImageVP
+'#          ....
+'#
+'#      When the named VP (StoredVP) is found to exist in the application map as a
+'#      subitem in the SomeWindowObject section of the map then a RegionImageVP 
+'#      will be invoked using the value of the StoredVP item as the coordinates 
+'#      for the region to capture.  
+'#
+'#      StoredVP is ALSO the name of the VP which must already exist as an asset 
+'#      of the currently running script.      
+'#
+'#
+'#      Once the unlogged VP has been completed, we attempt to retrieve the text
+'#      of a predefined OCR region mask that should exist in the VP.  
+'#
+'#      We can use the OCRRegion value provided from the inputrecord to identify 
+'#      the OCR mask number as needed by the SQAGetOcrRegionText function in Robot.  
+'#      Example 1 above shows we are looking for OCR region #1.
+'#
+'#      The OCRRegion value in the inputrecord can also be a reference in the 
+'#      Application Map in a section with the same name as the VP as shown below.
+'#
+'#          [SomeWindowObject]
+'#          SomeWindowObject="Type=Something...."
+'#          StoredVP="Coords=65,100,200,250"
+'#          ....
+'#
+'#          [StoredVP]
+'#          DataField=1
+'#          AnotherField=2
+'#          ....
+'#
+'#      Example 2 above shows that we have given region #1 a name of DataField.
+'#
+'#      
+'#      Once retrieved, the OCR text (if any) is compared against the expected 
+'#      results provided.
+'#
+'#      The routine expects that the menu's Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      name of the pre-existing VP asset stored in the currently running script.
+'#              If the name also exists in the app map under the component then 
+'#              a RegionImageVP will be invoked instead of a CompareImageVP.
+'#
+'#       6      Numeric OCR region mask to get the text from.  These values are defined
+'#              in the VP itself and can be viewed in Robot's ImageComparator/Editor.
+'#              A number can be used directly or a named reference can be used if
+'#              it is found to exist in the Application Map in a section with the 
+'#              same name as the VP.
+'#              
+'#       7      Text baseline to compare against the retrieved OCR text.
+'#
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyOCRValue()
+
+Dim VPIN
+Dim Result
+Dim region
+Dim ocrField
+Dim ocrRegion
+Dim ocrText
+Dim benchText
+
+'$NoCStrings
+
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        
+        'get and validate bench VP image specification
+        VPIN = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if VPIN = "" then 
+            LogMessage .testcommand &" missing required VP Name "& _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+        
+        'get and validate ocrField existence
+        ocrField = GetTrimmedQuotedField(.inputrecord, 6, .separator)
+        if ocrField = "" then 
+            LogMessage .testcommand &" missing required OCR Region "& _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+        
+        'if the ocrField exists in the appmap then we should use that
+        ocrText = DDGGetGUIID(VPIN, ocrField, "")
+        if ocrText = "" then ocrText = ocrField
+        
+        ocrRegion = -1
+        On Error Resume Next        
+        ocrRegion = CInt(ocrText)
+        On Error Goto 0
+        
+        if ocrRegion = -1 then
+            LogMessage .testcommand &" invalid OCR Region specified"& _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if        
+
+        'get and validate benchText existence
+        benchText = GetTrimmedQuotedField(.inputrecord, 7, .separator)
+        if benchText = "" then 
+            LogMessage .testcommand &" missing required EXPECTED RESULTS "& _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        end if
+
+        'if the VP name exists in the appmap then it should be a REGIONVP
+        region = DDGGetGUIID(.compname, VPIN, "")
+        
+        'perform unlogged image vp to force the OCR to occur        
+        Log.Enabled = False
+        if region = "" then        
+            Result = Region.Compare (.compGUIID, VPIN)
+'        else
+'            if InStr(1, region, "Coords=", 1) = 0 then
+'                Result = RegionVP(CompareImage, "", "VP="& VPIN &";Wait=2,10;Coords="& region)
+'            else
+'                Result = RegionVP(CompareImage, "", "VP="& VPIN &";Wait=2,10;"& region)
+'            end if
+        end if
+        Log.Enabled = True
+
+        ocrText=""
+        'now lets retrieve and compare OCR data
+        Result = OCR.CreateObject(Eval(ocrRegion)).GetText
+               
+        'if ocrText retrieval failed
+        if Result = 0 then
+            LogMessage .testcommand &" failed to retrieve OCR text "& _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        End if                
+        
+        'compare the ocr and benchmark text
+        Result = CompareStr(ocrText, benchText)
+        
+        if Result = 0 then  'pass
+            .statuscode = SDNoScriptFailure
+            LogMessage .windowname &" OCR text compare matched Bench:"& benchText, _
+                       PASSED_MESSAGE, ""
+        else
+            LogMessage .testcommand &" text compare failed. Retrieved Text was>"& ocrText & _
+                       "< See table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+        end if
+
+    End With    
+
+End sub
+
+
+'############################################################################
+'#
+'#   Sub VerifyMainMenu()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Retrieves the active windows menu system and outputs the full structure 
+'#      with status to a file.  It then compares that file with the specified 
+'#      benchmark file and sets pass/fail conditions for the test.
+'#      Uses the <a href="GenericMasterFunctions.htm#GenericVerifyMenuStructure">GenericMasterFunctions.GenericVerifyMenuStructure</a> routine.
+'#
+'#      This command also supports the "TF"(expected failure) record type. 
+'#      This command does not support the "TW" record type.
+'#
+'#      The routine expects that the menu's Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      name.ext of benchmark file on repositiory's Datapool\Bench directory
+'#      [6]     Optional expected descriptive text at start of file (first line of bench).
+'#              (If bench has this descriptive text this field is REQUIRED to pass.)
+'#      [7]     optional name.ext to give current structure in repository's 
+'#              Datapool\Test directory for compare with benchmark.
+'#              If no name is given then the bench name is used.
+'#      [8]     optional name.ext to store difference information in repository's Datapool\Dif.
+'#              If no name is given then the bench name is used.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyMainMenu()
+
+'$NoCStrings
+
+    Dim hMenu
+    
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        hMenu = GetMenu(.compHandle)
+        if hMenu = 0 then
+            LogMessage "Capture Main Menu failure. Invalid parameters provided or "& _
+                       .compName &" has no menu!  "& _
+                       "See table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        else
+            GenericVerifyMenuStructure hMenu  'from GeneralMasterFunctions (handles statuscode)
+        end if        
+        
+    End With
+    
+End Sub
+
+
+'moved to menuUtilities AUG 07, 2000 (Carl Nagle)
+Function VerifyTestStateString (testState, menuState)
+    VerifyTestStateString = MUVerifyTestStateString(testState, menuState)
+End Function
+
+'############################################################################
+'#
+'#   Sub VerifyMenuItem()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to verify the state information of a particular text string 
+'#      menuitem.  The menuitem should be specified in the form 
+'#      "Menu->Menu->MenuItem   CTRL+V" with the full text (ampersands optional), 
+'#      spaces(if any), and keyboard shortcut text (if any).  
+'#      (The ampersands precede any character in the menuitem that is underlined.)
+'#      Uses the <a href="GenericMasterFunctions.htm#GenericVerifyMenuItem">GenericMasterFunctions.GenericVerifyMenuItem</a> routine.
+'#
+'#      This command also supports the "TF"(expected failure) record type. 
+'#      This command does not support the "TW" record type.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Menu->MenuItem hierarchy string to identify which menuitem to test.
+'#              This menu hierarchy IS case-sensitive
+'#
+'#       6      Expected status string (or part thereof) to verify.  
+'#              Ex: "Enabled Checked"         OR  "Disabled Grayed"    etc.
+'#              Each item separated by a space will be evaluated separately so 
+'#              the order of the status items does not matter.  
+'#              These status items ARE case-sensitive. 
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyMenuItem()
+
+'$NoCStrings
+
+    Dim hMenu
+    
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        hMenu = GetMenu(.compHandle)
+        if hMenu = 0 then
+            LogMessage "Verify MenuItem failure. Invalid parameters provided or "& _
+                       .compName &" has no menu!  "& _
+                       "See table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        else
+            GenericVerifyMenuItem hMenu  'from GenericMasterFunctions (handles statuscode)
+        end if        
+        
+    End With
+    
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub VerifyMenuItemContains()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to verify the state information of a particular text string 
+'#      menuitem.  The menuitem should be specified in the form 
+'#      "Menu->Menu->MenuItem".  Ampersands are optional.  
+'#      (The ampersands precede any character in the menuitem that is underlined.)
+'#      Uses the <a href="GenericMasterFunctions.htm#GenericVerifyMenuItem">GenericMasterFunctions.GenericVerifyMenuItem</a> routine.
+'#
+'#      This command also supports the "TF"(expected failure) record type. 
+'#      This command does not support the "TW" record type.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Menu->MenuItem hierarchy string to identify which menuitem to test.
+'#              This menu hierarchy IS case-sensitive
+'#
+'#       6      Expected status string (or part thereof) to verify.  
+'#              Ex: "Enabled Checked"         OR  "Disabled Grayed"    etc.
+'#              Each item separated by a space will be evaluated separately so 
+'#              the order of the status items does not matter.  
+'#              These status items ARE case-sensitive. 
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyMenuItemContains()
+
+'$NoCStrings
+
+    Dim hMenu
+    
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        hMenu = GetMenu(.compHandle)
+        if hMenu = 0 then
+            LogMessage "Verify MenuItem failure. Invalid parameters provided or "& _
+                       .compName &" has no menu!  "& _
+                       "See table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        else
+            GenericVerifyMenuItem hMenu, 1  'from GenericMasterFunctions (handles statuscode)
+        end if        
+        
+    End With
+    
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub VerifyMenuID()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to verify the state information of a particular menuitem
+'#      identified by MenuID.  This is generally used when the menuitem is a 
+'#      bitmap or other item that does not have text.
+'#      This value can be retrieved from the the menu by index or by manual
+'#      lookup from a menu structure output from MenuUtilities.
+'#      Uses the <a href="GenericMasterFunctions.htm#GenericVerifyMenuID">GenericMasterFunctions.GenericVerifyMenuID</a> routine.
+'#
+'#      This command also supports the "TF"(expected failure) record type. 
+'#      This command does not support the "TW" record type.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      MenuID to identify which menuitem to test.  This is generally used 
+'#              when the menuitem is a bitmap or other item that does not have text.
+'#              This value can be retrieved from the the menu by index or by manual
+'#              lookup from a menu structure output from MenuUtilities.
+'#
+'#       6      Expected status string (or part thereof) to verify.  
+'#              Ex: "Enabled Checked"         OR  "Disabled Grayed"    etc.
+'#              Each item separated by a space will be evaluated separately so 
+'#              the order of the status items does not matter.  
+'#              These status items ARE case-sensitive. 
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub VerifyMenuID()
+
+'$NoCStrings
+
+    Dim hMenu
+    
+    with otrd
+    
+        'set default failure mode    
+        .statuscode = SDGeneralScriptFailure
+        hMenu = GetMenu(.compHandle)
+        if hMenu = 0 then
+            LogMessage "Verify MenuID failure. Invalid parameters provided or "& _
+                       .compName &" has no menu!  "& _
+                       "See table "& .filename &" at line "& _
+                       .linenumber, FAILED_MESSAGE, _
+                       .inputrecord
+            exit sub
+        else
+            GenericVerifyMenuID hMenu  'from GeneralMasterFunctions (handles statuscode)
+        end if        
+        
+    End With
+    
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub SelectMenuItem()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to select a particular text string menuitem.  The menuitem 
+'#      should be specified in the form "Menu->Menu->MenuItem   CTRL+V" 
+'#      with the full text, spaces(if any), and keyboard shortcut text (if
+'#      any).  
+'#
+'#      Ampersands preceding underlined characters are optional.
+'#      The routine first verifies that the specified menuitem exists
+'#      and exits with error if it does not.
+'#      If it does exist then the selection proceeds using the MenuID retrieved
+'#      from the found menuitem.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Menu->MenuItem hierarchy string to identify which menuitem to select.
+'#
+'#              NOTE:SQA can only handle submenus up to 5 levels deep.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      APR 17, 2012    Updated logic for .Net menubar
+'############################################################################
+Sub SelectMenuItem()
+
+    Dim menuitem
+    Dim mArray, propName,propValue
+    Dim info 
+    Dim status
+    Dim i
+    Dim node
+    Dim submenu
+    Dim subitem
+    'On Error Resume Next
+    
+    with otrd 
+        
+        .statuscode = SDGeneralScriptFailure
+
+        menuitem = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if menuitem = "" then 
+            LogMessage "Missing required MENUITEM string for " + .testcommand + _
+                       " in table " + .filename + " at line " + _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +" "+ .testcommand +" command failed."
+            exit sub
+        end if
+        
+        mArray = Split(menuitem,MUHierarchySeparator)
+        propName = Array("Caption","VisibleOnScreen")
+        propValue = Array(mArray(0),"True")
+        Set node = .compGUIID.FindChild(propName,propValue,1)
+                
+        If node.exists Then
+           .windowGUIID.Activate
+           node.Click 'click first item    
+                                  
+          Set submenu = getTopWindow(.compGUIID)
+          For i = 1 to Ubound(mArray) 
+            Set subitem = submenu.FindChild("Caption",mArray(i),2)
+            If subitem.Exists Then
+              subitem.Click  'click subitem
+            Else 
+              status = -1               
+            End If
+          Next   
+        Else 
+          status = -1         
+        End If                 
+     
+        If status <> 0 Then
+            LogMessage "MenuItem " & menuitem & " was not found in " & .windowname &"."& _
+                       "  See table " & .filename & " at line " & _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname &" "& .testcommand &" command failed."
+            status = Err.Number
+            exit sub
+        end if             
+        
+         LogMessage "Selecting "& .windowname &":MenuItem "& menuitem &".", "", ""
+        .statuscode = SDNoScriptFailure
+    End With     
+    
+End Sub     
+
+'############################################################################
+'#
+'#   Sub SelectMenuItemContains()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to select a particular text string menuitem.  The menuitem 
+'#      should be specified in the form "Menu->Menu->MenuItem".  
+'#
+'#      Ampersands preceding underlined characters are optional.
+'#      The routine first verifies that the specified menuitem exists
+'#      and exits with error if it does not.
+'#      If it does exist then the selection proceeds using the MenuID retrieved
+'#      from the found menuitem.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      Menu->MenuItem hierarchy string to identify which menuitem to select.
+'#
+'#              NOTE:SQA can only handle submenus up to 5 levels deep.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub SelectMenuItemContains()
+
+    Dim menuitem
+    Dim info
+    Set info = InitMenuInfo
+    Dim status
+    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        menuitem = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if menuitem = "" then 
+            LogMessage "Missing required MENUITEM string for " + .testcommand + _
+                       " in table " + .filename + " at line " + _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +" "+ .testcommand +" command failed."
+            exit sub
+        end if
+
+        status = MUGetMenuInfoFromHierarchy(.compHandle, menuitem, info, 1)
+        
+        'on failure
+        if status = 0 then
+            LogMessage "MenuItem " + menuitem + " was not found in " + .windowname +"."+ _
+                       "  See table " + .filename + " at line " + _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +" "+ .testcommand +" command failed."
+            exit sub
+        end if
+
+        'this substitution is no longer necessary when using MenuIDSelect
+        'menuitem = FindAndReplace (menuitem, "&", "")  'change between robot 7.5 and 2000
+
+        LogMessage "Selecting "& .windowname &":MenuItem "& menuitem &"("& info.menuText &").", "", ""
+        
+        .windowGUIID.Activate
+        .statuscode = SDNoScriptFailure
+        
+        'MenuSelect menuitem    '**** MenuSelect is NOT reliable "cannot find MenuItem"
+        MenuIDSelect info.ID
+
+    End With
+    
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub SelectMenuID()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Attempts to select a particular menuitem by menuID.  This is generally 
+'#      used when the menuitem is a bitmap or other item that does not have 
+'#      text.  This value can be retrieved from the the menu by index or by 
+'#      manual lookup from a menu structure output from MenuUtilities.
+'#      The routine first verifies that the specified menuitem exists and exits 
+'#      with error if it does not.  If it does exist then the selection proceeds.
+'#
+'#      The routine expects that the given object already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      MenuID to identify which menuitem to select.  
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#
+'############################################################################
+Sub SelectMenuID()
+
+    Dim menuIDstring
+    Dim menuID
+    Dim info
+    Set info = InitMenuInfo
+    Dim status
+    
+    with otrd
+    
+        .statuscode = SDGeneralScriptFailure
+
+        menuIDstring = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if menuIDstring = "" then 
+            LogMessage "Missing required MENUI ID string for " + .testcommand + _
+                       " in table " + .filename + " at line " + _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +" "+ .testcommand +" command failed."
+            exit sub
+        end if
+
+        'try to convert to a long value
+        menuID = 0
+        On Error Resume Next
+        menuID = CLng(menuIDstring)
+        On Error goto 0
+        
+        'exit if type mismatch error (not a number)
+        if menuID = 0 then
+            LogMessage "Invalid MENU ID:" + menuIDstring + " in " + .testcommand + _
+                       " in table " + .filename + " at line " + _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +" "+ .testcommand +" command failed."
+            exit sub
+        end if
+        
+        status = MUGetMenuInfoFromMenuID(.compHandle, menuID, info)
+        
+        'on failure
+        if status = 0 then
+            LogMessage "MenuID" + menuID + " was not found in " + .windowname +"."+ _
+                       "  See table " + .filename + " at line " + _
+                       .linenumber, FAILED_MESSAGE, _
+                       .windowname +" "+ .testcommand +" command failed."
+            exit sub
+        end if
+
+        LogMessage "Selecting "+ .windowname +":MenuID" + menuID + ".", "", ""
+
+        .statuscode = SDNoScriptFailure
+        MenuIDSelect menuID
+
+    End With
+    
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub CloseWindowObject()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Sends a Close command to the active window.  
+'#
+'#      This Window command has a problem in that it does not want to
+'#      use the same recognition methods used by the other Window commands (like
+'#      SetContext).  Particularly, it does not accept the Type=Window portion
+'#      of these recognition methods.  In addition, if the window is a child
+'#      window of a parent then it expects the ";ChildWindow" add-on in the 
+'#      recognition method.  The child may also need the parent as part of its
+'#      full recognition string like:
+'#
+'#          ChildWindow=Type=Window;&lt;parent rec&gt;;\;Caption=&lt;caption&gt;;ChildWindow
+'#
+'#      To handle these child windows, we parse the typical recognition method for 
+'#      our window and attempt to handle these issues.  Once SetContext has 
+'#      successfully set our window, we then remove any "Type=Window" substring 
+'#      if present and add the ";ChildWindow" substring if not present.
+'#
+'#      To take advantage of this, this routine must be called with the child
+'#      window as a component of the parent window like below:
+'#
+'#          t, ParentWindow, ChildWindow, CloseWindow
+'#
+'#      If the routine is called like either of the examples below then default
+'#      processing will occur.  This will merely SetContext on the provided 
+'#      Window and use "CurrentWindow" as the parameter to the command.
+'#
+'#          t, ParentWindow, ParentWindow, CloseWindow
+'#          t, ChildWindow , ChildWindow , CloseWindow  (normally won't work)
+'#
+'#
+'#      The routine expects that the Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      (none)
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      JUL 01, 2010    (Carl Nagle) Fixed and Enhanced for SAFS Debug Log
+'#      OCT 03, 2011    (EITAHT) Changes made based on information from Dharmesh:
+'#                      Do not check for window or component.  This is done
+'#                      earlier in the code.  For Win domain, do action on comp; 
+'#                      not on window.
+'#
+'########################################################
+Sub CloseWindowObject()
+
+    with otrd
+
+	      On Error Resume Next
+        .statuscode = SDNoScriptFailure
+        
+        .windowGUIID.Activate      
+        if .compGUIID <> "" then 
+            .compGUIID.SetFocus    
+        end if
+        
+        'This works if object is a top-level window or an MDI-child window.
+        'It has no effect on popup windows and controls.
+        
+        SAFSDebug "Attempting CLOSE command...", DEBUG_INFO
+        
+        Err.Clear
+        
+        'This works on Win domain windows. 
+        '(WaitTimeout) is NOT supported per documentation, apparently.
+        'The Close API does NOT return a value (TC V9.x)
+
+        .compGUIID.Close
+        
+        ' should we pause to let it close down?
+        
+        if (NOT .compGUIID.Exists) then
+            SAFSDebug "CLOSE command appears successful. Error = "& CStr(Err.Number) &", GuiExists ="& .compGUID.Exists, DEBUG_INFO
+            LogMessage "CLOSE sent to "& .compname, "", ""
+            Exit Sub
+        End if
+
+        If (Err.Number = 0) then
+            SAFSDebug "CLOSE command appears successful.", DEBUG_INFO
+            LogMessage "CLOSE sent to "& .compname, "", ""
+            Exit Sub
+        end if
+        
+        Err.Clear
+        SAFSDebug "CLOSE command did NOT report success. Item Exists. Attempting Terminate on "& .compGUIID, DEBUG_INFO
+        .compGUIID.Terminate
+        
+        If (NOT .compGUIID.Exists) then
+            SAFSDebug "TERMINATE command appears successful. Error = "& CStr(Err.Number) &", GuiExists ="& .compGUID.Exists, DEBUG_INFO
+            LogMessage "CLOSE sent to "& .compname, "", ""
+            Exit Sub
+        end if
+        
+        If (Err.Number = 0) then
+            SAFSDebug "TERMINATE command appears successful.", DEBUG_INFO
+            LogMessage "CLOSE sent to "& .compname, "", ""
+            Exit Sub
+        end if
+
+        .statuscode = SDGeneralScriptFailure
+        SAFSDebug "CLOSEWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, DEBUG_DEBUG
+        LogMessage "CLOSEWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, FAILED_MESSAGE, ""
+        Err.Clear
+         
+    End With
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub RestoreWindow()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Sends a RestorePos command to the active window.
+'#
+'#      This Window command has a problem in that it does not want to
+'#      use the same recognition methods used by the other Window commands (like
+'#      SetContext).  Particularly, it does not accept the Type=Window portion
+'#      of these recognition methods.  In addition, if the window is a child
+'#      window of a parent then it expects the ";ChildWindow" add-on in the 
+'#      recognition method.  The child may also need the parent as part of its
+'#      full recognition string like:
+'#
+'#          ChildWindow=Type=Window;&lt;parent rec&gt;;\;Caption=&lt;caption&gt;;ChildWindow
+'#
+'#      To handle these child windows, we parse the typical recognition method for 
+'#      our window and attempt to handle these issues.  Once SetContext has 
+'#      successfully set our window, we then remove any "Type=Window" substring 
+'#      if present and add the ";ChildWindow" substring if not present.
+'#
+'#      To take advantage of this, this routine must be called with the child
+'#      window as a component of the parent window like below:
+'#
+'#          t, ParentWindow, ChildWindow, Restore
+'#
+'#      If the routine is called like either of the examples below then default
+'#      processing will occur.  This will merely SetContext on the provided 
+'#      Window and use "CurrentWindow" as the parameter to the command.
+'#
+'#          t, ParentWindow, ParentWindow, Restore
+'#          t, ChildWindow , ChildWindow , Restore      (normally won't work)
+'#
+'#
+'#      The routine expects that the Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      (none)
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      OCT 02, 2011    (EITAHT) Fixed and Enhanced for SAFS Debug Log 
+'#      OCT 03, 2011    (EITAHT) Changes made based on information from Dharmesh:
+'#                      Do not check for window or component.  This is done
+'#                      earlier in the code.  For Win domain, do action on comp; 
+'#                      not on window.
+'#
+'##########################################################
+Sub RestoreWindow()
+
+    Dim rc
+    with otrd
+
+	On Error Resume Next
+        .statuscode = SDNoScriptFailure
+        
+        .windowGUIID.Activate      
+        if .compGUIID <> "" then 
+            .compGUIID.SetFocus    
+        end if
+        
+        'This works if object is a top-level window or an MDI-child window.
+        'It has no effect on popup windows and controls.
+        
+        SAFSDebug "Attempting RESTORE command...", DEBUG_INFO
+        
+        rc = Log.ErrCount
+        
+        'This works on Win domain windows.
+        .compGUIID.Restore
+        
+        If rc = Log.ErrCount then
+            LogMessage "RESTORE sent to "& .compname, "", ""
+        else
+            .statuscode = SDGeneralScriptFailure
+            SAFSDebug "RESTOREWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, DEBUG_DEBUG
+            LogMessage "RESTOREWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, FAILED_MESSAGE, ""
+	          Err.Clear 
+	      End If
+    End With
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub MaximizeWindow()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Sends a WMaximize command to the active window.
+'#
+'#      This Window command has a problem in that it does not want to
+'#      use the same recognition methods used by the other Window commands (like
+'#      SetContext).  Particularly, it does not accept the Type=Window portion
+'#      of these recognition methods.  In addition, if the window is a child
+'#      window of a parent then it expects the ";ChildWindow" add-on in the 
+'#      recognition method.  The child may also need the parent as part of its
+'#      full recognition string like:
+'#
+'#          ChildWindow=Type=Window;&lt;parent rec&gt;;\;Caption=&lt;caption&gt;;ChildWindow
+'#
+'#      To handle these child windows, we parse the typical recognition method for 
+'#      our window and attempt to handle these issues.  Once SetContext has 
+'#      successfully set our window, we then remove any "Type=Window" substring 
+'#      if present and add the ";ChildWindow" substring if not present.
+'#
+'#      To take advantage of this, this routine must be called with the child
+'#      window as a component of the parent window like below:
+'#
+'#          t, ParentWindow, ChildWindow, Maximize
+'#
+'#      If the routine is called like either of the examples below then default
+'#      processing will occur.  This will merely SetContext on the provided 
+'#      Window and use "CurrentWindow" as the parameter to the command.
+'#
+'#          t, ParentWindow, ParentWindow, Maximize
+'#          t, ChildWindow , ChildWindow , Maximize   (normally won't work)
+'#
+'#
+'#      The routine expects that the Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      (none)
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      OCT 02, 2011    (EITAHT) Fixed and Enhanced for SAFS Debug Log
+'#      OCT 03, 2011    (EITAHT) Changes made based on information from Dharmesh:
+'#                      Do not check for window or component.  This is done
+'#                      earlier in the code.  For Win domain, do action on comp; 
+'#                      not on window.
+'#      FEB 28, 2014    (DHARMESH) Fixed call for Flex/Browser
+'#
+'#############################################################
+Sub MaximizeWindow()
+
+    Dim rc
+    Dim win
+    with otrd
+
+	      On Error Resume Next
+        .statuscode = SDNoScriptFailure
+        
+        .windowGUIID.Activate      
+        if .compGUIID <> "" then 
+            .compGUIID.SetFocus    
+        end if
+        
+        'This works if object is a top-level window or an MDI-child window.
+        'It has no effect on popup windows and controls.
+        
+        SAFSDebug "Attempting MAXIMIZE command...", DEBUG_INFO
+        
+        rc = Log.ErrCount
+        
+        If .environment = DDU_FLEX_ENVIRONMENT OR _
+            .environment = DDU_HTML_ENVIRONMENT Then           
+            set win = .compGUIID
+            Do While NOT win.FullName = "Sys"
+              if win.Parent.FullName = "Sys" then
+                  win.BrowserWindow(0).Maximize()
+                 Exit Do
+              else
+                Set win = win.Parent
+              end if
+            Loop
+        Else
+            'This works on Win domain windows.
+            .compGUIID.Maximize
+        end If     
+        
+        If rc = Log.ErrCount then
+            LogMessage "MAXIMIZE sent to "& .compname, "", ""
+        else
+            .statuscode = SDGeneralScriptFailure
+            SAFSDebug "MAXIMIZEWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, DEBUG_DEBUG
+            LogMessage "MAXIMIZEWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, FAILED_MESSAGE, ""
+	          Err.Clear 
+	      End If
+    End With
+End Sub
+
+
+
+'############################################################################
+'#
+'#   Sub MinimizeWindow()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Sends a WMinimize command to the active window.
+'#
+'#      This Window command has a problem in that it does not want to
+'#      use the same recognition methods used by the other Window commands (like
+'#      SetContext).  Particularly, it does not accept the Type=Window portion
+'#      of these recognition methods.  In addition, if the window is a child
+'#      window of a parent then it expects the ";ChildWindow" add-on in the 
+'#      recognition method.  The child may also need the parent as part of its
+'#      full recognition string like:
+'#
+'#          ChildWindow=Type=Window;&lt;parent rec&gt;;\;Caption=&lt;caption&gt;;ChildWindow
+'#
+'#      To handle these child windows, we parse the typical recognition method for 
+'#      our window and attempt to handle these issues.  Once SetContext has 
+'#      successfully set our window, we then remove any "Type=Window" substring 
+'#      if present and add the ";ChildWindow" substring if not present.
+'#
+'#      To take advantage of this, this routine must be called with the child
+'#      window as a component of the parent window like below:
+'#
+'#          t, ParentWindow, ChildWindow, Minimize
+'#
+'#      If the routine is called like either of the examples below then default
+'#      processing will occur.  This will merely SetContext on the provided 
+'#      Window and use "CurrentWindow" as the parameter to the command.
+'#
+'#          t, ParentWindow, ParentWindow, Minimize
+'#          t, ChildWindow , ChildWindow , Minimize   (normally won't work)
+'#
+'#
+'#      The routine expects that the Window already has Context or Focus.
+'#      It also expects that Global StepDriverTestInfo contains all the information 
+'#      it needs to perform its function.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      (none)
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      OCT 02, 2011    (EITAHT) Fixed and Enhanced for SAFS Debug Log
+'#      OCT 03, 2011    (EITAHT) Changes made based on information from Dharmesh:
+'#                      Do not check for window or component.  This is done
+'#                      earlier in the code.  For Win domain, do action on comp; 
+'#                      not on window.
+'#      FEB 28, 2014    (DHARMESH) Fixed call for Flex/Browser
+'##########################################################
+Sub MinimizeWindow()
+
+    Dim rc
+    Dim win
+    with otrd
+
+	      On Error Resume Next
+        .statuscode = SDNoScriptFailure
+        
+        .windowGUIID.Activate      
+        if .compGUIID <> "" then 
+            .compGUIID.SetFocus    
+        end if
+        
+        'This works if object is a top-level window or an MDI-child window.
+        'It has no effect on popup windows and controls.
+        
+        SAFSDebug "Attempting MINIMIZE command...", DEBUG_INFO
+        
+        rc = Log.ErrCount
+        
+       If .environment = DDU_FLEX_ENVIRONMENT OR _
+            .environment = DDU_HTML_ENVIRONMENT Then           
+            set win = .compGUIID
+            Do While NOT win.FullName = "Sys"
+              if win.Parent.FullName = "Sys" then
+                  win.BrowserWindow(0).Minimize()
+                 Exit Do
+              else
+                Set win = win.Parent
+              end if
+            Loop
+        Else
+            'This works on Win domain windows.
+            .compGUIID.Minimize
+        end If     
+        
+        If rc = Log.ErrCount then
+            LogMessage "MINIMIZE sent to "& .compname, "", ""
+        else
+            .statuscode = SDGeneralScriptFailure
+            SAFSDebug "MINIMIZEWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, DEBUG_DEBUG
+            LogMessage "MINIMIZEWINDOW failed with TCAFS error "& Cstr(Err.Number) &":"& Err.Description, FAILED_MESSAGE, ""
+	          Err.Clear 
+	      End If
+        
+    End With
+End Sub
+
+
+'############################################################################
+'#
+'#   Sub SetWindowPosition()
+'#
+'#
+'# DESCRIPTION:
+'#
+'#      Sends a SetPosition command to the window to set the position, size, 
+'#      and status of the window.  The position, size, and status information 
+'#      is stored in the app map as a subitem in the section for the window.
+'#      The information should be in the format of:
+'#      
+'#          "0,0,640,480;Status=NORMAL"    OR
+'#          "Coords=0,0,640,480;Status=NORMAL"
+'#
+'#      That example positions the window at 0,0; sizes it to 640 x 480, and
+'#      sets it's status to NORMAL.  Valid values for STATUS are:
+'#
+'#          NORMAL, MINIMIZED, and MAXIMIZED
+'#
+'#
+'#      The Window SetPosition command has a problem in that it does not want to
+'#      use the same recognition methods used by the other Window commands (like
+'#      SetContext).  Particularly, it does not accept the Type=Window portion
+'#      of these recognition methods.  In addition, if the window is a child
+'#      window of a parent then it expects the ";ChildWindow" add-on in the 
+'#      recognition method.  The child may also need the parent as part of its
+'#      full recognition string like:
+'#
+'#          ChildWindow=Type=Window;&lt;parent rec&gt;;\;Caption=&lt;caption&gt;;ChildWindow
+'#
+'#      To handle these child windows, we parse the typical recognition method for 
+'#      our window and attempt to handle these issues.  Once SetContext has 
+'#      successfully set our window, we then remove any "Type=Window" substring 
+'#      if present and add the ";ChildWindow" substring if not present.
+'#
+'#      To take advantage of this, this routine must be called with the child
+'#      window as a component of the parent window like below:
+'#
+'#          t, ParentWindow, ChildWindow, SetPosition, ChildPositionReference
+'#
+'#      If the routine is called like either of the examples below then default
+'#      processing will occur.  This will merely SetContext on the provided 
+'#      Window and use "CurrentWindow" as the parameter to SetPosition.
+'#
+'#          t, ParentWindow, ParentWindow, SetPosition, ParentPosition
+'#          t, ChildWindow , ChildWindow , SetPosition, ChildPosition   (normally won't work)
+'#
+'#
+'#      This routine expects that Global StepDriverTestInfo contains all the 
+'#      information it needs to perform its function and that the current app 
+'#      map exists and contains the required information.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      FLD     CONTENT
+'#      ---     ------------------------------    
+'#       5      The name of the reference in the window section containing the
+'#              position, size, and status information string.
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      NOV 14, 2011    (Lei Wang)    Modify to make it works in TestComplete
+'#
+'##########################################################
+Sub SetWindowPosition()
+
+    Dim position
+    Dim temp
+    Dim sarray
+    Dim message
+    
+    with otrd
+        .statuscode = SDGeneralScriptFailure
+
+        On Error Resume Next
+        'Get the position
+        temp = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+        if temp = "" then
+            LogMessage "Missing required position parameter for "& .testcommand & _
+                       " in table "& .filename &" at line "& _
+                       .linenumber, WARNING_MESSAGE, _
+                       .inputrecord &" IGNORED"
+            exit sub
+        else
+            'Try to get the position from the map
+            position = DDGGetGUIID(.compname, temp,"" )
+            If position = "" Then
+                SAFSDebug "Can't get positon '" & temp & "' in section '"_
+                          +.compname+ "' from map.", DEBUG_DEBUG
+                position = temp
+            End If
+            
+            'position contains the coordination and status information
+            'Remove the extra string 'Coords=' and 'Status=', store the
+            'result to temp
+            temp = FindAndReplace(position, "=" ,"" , 1)
+            temp = FindAndReplace(temp, "Coords" ,"" , 1)
+            temp = FindAndReplace(temp, "Status" ,"" , 1)
+            
+            'Replace ';' with ','
+            If InStr(temp, ";") > 0 Then
+                temp = FindAndReplace(temp, ";" ,"," , 1)
+            End If
+            
+            'Now the position string should by 'x,y,width,height,status'
+            sarray = Split(temp, ",")
+            
+            'sarray should contain x, y , width, height, status
+            'Check the length of the array
+            If UBound(sarray) <> 4 Then
+                LogMessage .testcommand &" in table "& .filename &" at line "& .linenumber,_
+                           WARNING_MESSAGE, _
+                           "Required position parameter is wrong, Position: " & position
+                Exit Sub            
+            End If
+            
+        end if
+        
+        .windowGUIID.Activate
+        '.compGUIID.SetFocus
+        
+        'target = .compGUIID  'wp: RATIONAL SAYS CurrentWindow WILL NEVER CLOSE A CHILD WINDOW
+                             'wp: SO, THE DEFAULT SHOULD BE THE USER'S INPUT, NOT CurrentWindow
+
+        'if this is NOT the top level window then we have to make some changes
+        'if CompareStr(.windowname, .compname) <> 0 then 
+        '     target = makeChildWindow(.compGUIID)  'wp: ONLY NEED ONE VARIABLE, target 
+        'else                           'wp: IF .windowname=.compname THEN CLOSING... 
+        '     target = "CurrentWindow"  'wp: ...the CurrentWindow ALWAYS WORKS
+        'end if      
+        
+        If StringContainsIgnoreCase(sarray(4),"MINIMIZED") Then
+            .windowGUIID.Minimize()
+            message = .windowname & " has been minimized."
+        ElseIf StringContainsIgnoreCase(sarray(4),"MAXIMIZED") Then
+            .windowGUIID.Maximize()
+            message = .windowname & " has been maximized."
+        Else
+            'The window need to be restored firstly from the minimize or maximize status
+            'otherwise it can't be set to a certain position
+            .windowGUIID.Restore()            
+            .windowGUIID.Position sarray(0), sarray(1), sarray(2), sarray(3)
+            message = .windowname & " has been set to position("&sarray(0)&","&sarray(1)&","&sarray(2)&","&sarray(3)&")."
+        End If   
+        
+        If Err.Number = 0 Then
+            .statuscode = SDNoScriptFailure
+            LogMessage .testcommand & " Succeeded. ", _
+                        PASSED_MESSAGE,_
+                        message
+        Else
+            LogMessage .testcommand & " Failed. ", _
+                        FAILED_MESSAGE,_
+                        "Error Number: " & Cstr(Err.Number) 
+        End If       
+        
+    End With
+End Sub
+
+'# getTopWindow
+
+Function getTopWindow(component)
+    Dim topWindow
+    
+    Set topWindow = component
+   
+    Do While True
+      
+        If InStr(1,LCase(topWindow.Name),"process") > 0 Then
+            SAFSDebug "Top window '" & topWindow.Name & "' has been found.", DEBUG_INFO   
+            Exit Do
+        End If
+            
+        If topWindow.Parent is Nothing Then
+            SAFSDebug topWindow.Name & " has not parent.", DEBUG_ERROR        
+            Exit Function
+        End If
+
+        Set topWindow = topWindow.Parent
+    Loop
+    
+    Set getTopWindow = topWindow
+    
+End Function
+
+'############################################################################
+'#
+'#   Sub Main ()
+'#
+'# DESCRIPTION:
+'#
+'#      Entry point to process a StepDriver ACTION COMMAND on a WINDOW.
+'#      The routine merely reads the Global otrd.testcommand and 
+'#      calls the appropriate subroutine to process it.  
+'#
+'#      If the testcommand is unrecognized it will log a WARNING_MESSAGE and
+'#      exit with a WARNING status.
+'#      
+'# DATA TABLE PARAMETERS:
+'#
+'#      none    -   the called subroutine has the requirements
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: OCT 10, 2006
+'# History:
+'#
+'#      OCT 10, 2006    Original Release
+'#      JUL 01, 2010    (Carl Nagle) Enhanced for SAFS Debug Log and fixed CloseWindow
+'#
+'############################################################################
+Sub WindowsMain()
+
+    Dim status
+    
+        'the action and record type ARE supported in this library.  
+        
+        SAFSDebug "windowFunctions processing: "& otrd.TestCommand, DEBUG_INFO
+
+        'do stuff in here
+        Select Case UCase(otrd.TestCommand)
+            
+            Case "VERIFYIMAGE"
+            
+                VerifyImage
+            
+            Case "VERIFYOCRVALUE"
+            
+                VerifyOCRValue
+            
+            Case "VERIFYMAINMENU"
+            
+                VerifyMainMenu
+            
+            Case "VERIFYMENUITEM"
+            
+                VerifyMenuItem
+            
+            Case "VERIFYMENUITEMCONTAINS"
+            
+                VerifyMenuItemContains
+            
+            Case "VERIFYMENUID"
+            
+                VerifyMenuID
+            
+            Case "SELECTMENUITEM"
+            
+                SelectMenuItem
+            
+            Case "SELECTMENUITEMCONTAINS"
+            
+                SelectMenuItemContains
+            
+            Case "SELECTMENUID"
+            
+                SelectMenuID
+                
+            Case "CLOSEWINDOW"
+            
+                CloseWindowObject       'CloseWindow' function name conflicts with WinAPI
+            
+            Case "MINIMIZE"
+            
+                MinimizeWindow
+            
+            Case "MAXIMIZE"
+            
+                MaximizeWindow
+            
+            Case "RESTORE"
+            
+                RestoreWindow
+            
+            Case "SETPOSITION"
+            
+                SetWindowPosition
+            
+            Case Else
+            
+                'GenericUnimplementedCommand
+                HandleGenericCommand
+            
+        End Select
+    
+End Sub
+

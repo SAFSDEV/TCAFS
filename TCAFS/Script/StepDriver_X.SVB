@@ -1,0 +1,119 @@
+﻿
+'##############################################################################
+'#
+'#   StepDriver_X.SBH  CONSTANTS, GLOBALS, TYPES etc.
+'#
+'# Working Header File used by StepDriver library.
+'# This is where all the actual constants etc. are stored since they have to be 
+'# separate from the Export Declarations and the Sourcecode to avoid circular
+'# referencing.
+'#
+'# This library is defined by:
+'#
+'# StepDriver_X    Constants, Globals, Types etc.
+'# StepDriver      Sourcecode and Detailed Documentation
+'#
+'#
+'##############################################################################
+
+'# USER-DEFINED TYPES 
+'USEUNIT ApplicationUtilities_X
+
+'# LIBRARY CONSTANTS
+'<a name="#modes"></a>  Step Driver MODES
+Const SDStandAloneMode      = 0    'script called
+Const SDSuiteDrivenMode     = 1         'driver called
+
+'<a name="#returncodes"></a>  StepDriver RETURN CODES
+Const SDNoScriptFailure       = -1
+Const SDScriptWarning         = -2
+Const SDGeneralScriptFailure  = 0
+Const SDInvalidFileIO         = 2
+Const SDScriptNotExecuted     = 4
+
+
+'<a name="#recordtypes"></a>  StepDriver RECORD TYPES
+Const SDCOMMENT_BLOCK_DELIMITER = "'##"   'Used to mark the start/end of comment block
+Const SDCOMMENT_DELIMITER       = "'#"    'Used to mark a comment line within a block
+                                          '(A single quote by itself will also work)
+Const SDBLOCKID               = "B"
+Const SDDRIVER_COMMAND        = "C"
+Const SDSKIP_TEST_STEP        = "S"
+Const SDTEST_STEP             = "T"
+
+
+'<a name="#drivercommands"></a> Step Driver DRIVER COMMANDS
+'newer driver commands may not appear here because they are implemented
+'more globally in <a href="DDUtilities.htm#drivercommands">DDUtilities</a> for ALL the drivers.
+
+Const SDDATA_VERSION          = "VERSION"
+Const SDLOG_GENERIC_MESSAGE   = "LOGMESSAGE"
+
+Const SDLAUNCH_APPLICATION    = "LAUNCHAPPLICATION"
+Const SDCLOSE_APPLICATION     = "CLOSEAPPLICATION"
+Const SDSET_APPLICATION_MAP   = "SETAPPLICATIONMAP"
+Const SDCALL_SCRIPT           = "CALLSCRIPT"
+Const SDCALL_CYCLE            = "CALLCYCLE"
+Const SDCALL_SUITE            = "CALLSUITE"
+Const SDCALL_STEP             = "CALLSTEP"
+Const SDCLEAR_APP_MAP_CACHE   = "CLEARAPPMAPCACHE"
+
+Const SDSTART_WEB_BROWSER     = "STARTWEBBROWSER"
+Const SDWAIT_FOR_WEB_PAGE     = "WAITFORWEBPAGE"
+
+Const SDWAIT_FOR_GUI                 = "WAITFORGUI"
+Const SDWAIT_FOR_GUI_GONE            = "WAITFORGUIGONE"
+Const SDWAIT_FOR_PROPERTY_VALUE      = "WAITFORPROPERTYVALUE"
+Const SDWAIT_FOR_PROPERTY_VALUE_GONE = "WAITFORPROPERTYVALUEGONE"
+
+Const SDPAUSE                   = "PAUSE"
+
+Const SDSET_TESTCASE          = "SETTESTCASE"
+Const SDEND_TESTCASE          = "ENDTESTCASE"
+
+Const SDSET_REQUIREMENT       = "SETREQUIREMENT"
+Const SDEND_REQUIREMENT       = "ENDREQUIREMENT"
+
+Const SDHIGHLIGHT_COMPONENT   = "HIGHLIGHT"
+
+'<a name="#popupmenuactions"></a>POPUP MENU CONSTANTS for <a href="PopupMenuFunctions.htm">PopupMenuFunctions</a>.
+Const SDPOPUP_MENU_COMPONENT_TYPE     = "POPUPMENU"
+Const SDSELECT_POPUP_MENUITEM_COMMAND = "SelectPopupMenuItem"
+Const SDSELECT_UNVERIFIED_POPUP_MENUITEM_COMMAND = "SelectUnverifiedPopupMenuItem"
+Const SDSELECT_POPUP_MENUID_COMMAND   = "SelectPopupMenuID"
+Const SDVERIFY_POPUP_MENUITEM_COMMAND = "VerifyPopupMenuItem"
+Const SDVERIFY_POPUP_MENUID_COMMAND   = "VerifyPopupMenuID"
+Const SDVERIFY_POPUP_MENU_COMMAND     = "VerifyPopupMenu"
+
+
+'# GLOBAL VARIABLES
+
+'                    (to <a href="ApplicationUtilities.htm#user_defined">AUStatusInfo</a>)
+Dim StepDriverInfo 
+Set StepDriverInfo = InitAUStatusInfo    'status of overall test 
+                                         
+'                        (to <a href="ApplicationUtilities.htm#user_defined">AUGUIInfo</a>)
+'Dim StepDriverTestInfo 
+'Set StepDriverTestInfo = InitAUGUIInfo   'info for component tests
+'
+Dim SDFieldSeparator   'current StepDriver field separator (for files)
+Dim ostaf
+Dim otrd
+Dim handleid
+
+Dim TCExecutable          'should get set to Const SDTEST_COMPLETE or SDTEST_EXECUTE
+Dim TCExecutableVersion   'should get set to numeric version (9.3, 10, 10.1, etc.)
+Dim oTestComplete         'will hold an instance to the TestCompleteApplication COM object.
+
+Dim SDObjectsMap, SDTypesMap, SDFunctionsMap
+Dim SDsecsWaitForWindow, SDsecsWaitForComponent
+Dim STFSMOnly
+Dim SdepthLevel
+
+CONST DEFAULT_TC_CLIENT = "SAFS/TC"
+CONST SDTEST_COMPLETE = "TestComplete"
+CONST SDTEST_EXECUTE  = "TestExecute"
+
+'highLightComponent is used to mark if we need to highlight component during test.
+Dim highLightComponent
+highLightComponent = False
