@@ -71,7 +71,7 @@
 				<Prp name="value" type="S" value="Log"/>
 			</Node>
 			<Prp name="key" type="S" value="{900EBD0E-65F0-4204-A43F-8EBEF8A64102}"/>
-			<Prp name="settingsversion" type="S" value="9.31"/>
+			<Prp name="settingsversion" type="S" value="10.0"/>
 		</Node>
 		<Node name="test data">
 			<Node name="child list">
@@ -100,6 +100,6 @@
 		</Node>
 		<Prp name="key" type="S" value="{8464489B-6B4A-4657-AA12-E12597735A3B}"/>
 		<Prp name="signature" type="S" value="{24B6FA0B-0143-461A-9758-AEB9E9A9428B}"/>
-		<Prp name="version" type="S" value="9.0"/>
+		<Prp name="version" type="S" value="10.0"/>
 	</Node>
 </Nodes>

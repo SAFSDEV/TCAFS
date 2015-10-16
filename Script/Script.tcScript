@@ -220,6 +220,6 @@
 		</Node>
 		<Prp name="settingsversion" type="S" value="9.10"/>
 		<Prp name="signature" type="S" value="{9252F941-DB23-4FCA-AA50-858B33BB4A19}"/>
-		<Prp name="version" type="S" value="9.0"/>
+		<Prp name="version" type="S" value="10.0"/>
 	</Node>
 </Nodes>

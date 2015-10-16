@@ -38,6 +38,6 @@
 			<Prp name="settingsversion" type="S" value="9.10"/>
 		</Node>
 		<Prp name="signature" type="S" value="{1C914193-A452-48E8-A8FD-BCA13ACFF263}"/>
-		<Prp name="version" type="S" value="9.0"/>
+		<Prp name="version" type="S" value="10.0"/>
 	</Node>
 </Nodes>

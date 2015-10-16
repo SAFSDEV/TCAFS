@@ -57,281 +57,6 @@
 		<Node name="config">
 			<Prp name="language" type="S" value="{897793E3-73F3-4895-A956-3D41D3A24A45}"/>
 		</Node>
-		<Node name="files">
-			<Node name="events\events.tcax">
-				<Prp name="relpath" type="S" value="Events\Events.tcAX"/>
-			</Node>
-			<Node name="script\applicationutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\ApplicationUtilities_X.svb"/>
-			</Node>
-			<Node name="script\checkboxfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\CheckBoxFunctions.svb"/>
-			</Node>
-			<Node name="script\comboboxfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\ComboBoxFunctions.svb"/>
-			</Node>
-			<Node name="script\comboeditboxfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\ComboEditBoxFunctions.svb"/>
-			</Node>
-			<Node name="script\customdrivercommands.svb">
-				<Prp name="relpath" type="S" value="Script\CustomDriverCommands.svb"/>
-			</Node>
-			<Node name="script\customdrivercommands_x.svb">
-				<Prp name="relpath" type="S" value="Script\CustomDriverCommands_X.svb"/>
-			</Node>
-			<Node name="script\customlogutilities.svb">
-				<Prp name="relpath" type="S" value="Script\CustomLogUtilities.svb"/>
-			</Node>
-			<Node name="script\customlogutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\CustomLogUtilities_X.svb"/>
-			</Node>
-			<Node name="script\customrecordtypes.svb">
-				<Prp name="relpath" type="S" value="Script\CustomRecordTypes.svb"/>
-			</Node>
-			<Node name="script\customrecordtypes_x.svb">
-				<Prp name="relpath" type="S" value="Script\CustomRecordTypes_X.svb"/>
-			</Node>
-			<Node name="script\customstatusutilities.svb">
-				<Prp name="relpath" type="S" value="Script\CustomStatusUtilities.svb"/>
-			</Node>
-			<Node name="script\customstatusutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\CustomStatusUtilities_X.svb"/>
-			</Node>
-			<Node name="script\customtestcommands.svb">
-				<Prp name="relpath" type="S" value="Script\CustomTestCommands.svb"/>
-			</Node>
-			<Node name="script\customtestcommands_x.svb">
-				<Prp name="relpath" type="S" value="Script\CustomTestCommands_X.svb"/>
-			</Node>
-			<Node name="script\customutilities.svb">
-				<Prp name="relpath" type="S" value="Script\CustomUtilities.svb"/>
-			</Node>
-			<Node name="script\customutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\CustomUtilities_X.svb"/>
-			</Node>
-			<Node name="script\datagrid.svb">
-				<Prp name="relpath" type="S" value="Script\DataGrid.SVB"/>
-			</Node>
-			<Node name="script\datagrid_x.svb">
-				<Prp name="relpath" type="S" value="Script\DataGrid_X.SVB"/>
-			</Node>
-			<Node name="script\dddrivercommands.svb">
-				<Prp name="relpath" type="S" value="Script\DDDriverCommands.svb"/>
-			</Node>
-			<Node name="script\dddrivercountercommands.svb">
-				<Prp name="relpath" type="S" value="Script\DDDriverCounterCommands.svb"/>
-			</Node>
-			<Node name="script\ddedriverdeprecatedcommand.svb">
-				<Prp name="relpath" type="S" value="Script\DDEDriverDeprecatedCommand.svb"/>
-			</Node>
-			<Node name="script\ddedriverflowcommand.svb">
-				<Prp name="relpath" type="S" value="Script\DDEDriverFlowCommand.svb"/>
-			</Node>
-			<Node name="script\ddengine.svb">
-				<Prp name="relpath" type="S" value="Script\DDEngine.svb"/>
-			</Node>
-			<Node name="script\ddguiutilities.svb">
-				<Prp name="relpath" type="S" value="Script\DDGUIUtilities.svb"/>
-			</Node>
-			<Node name="script\ddguiutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\DDGUIUtilities_X.svb"/>
-			</Node>
-			<Node name="script\ddutilities.svb">
-				<Prp name="relpath" type="S" value="Script\DDUtilities.SVB"/>
-			</Node>
-			<Node name="script\ddutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\DDUtilities_X.svb"/>
-			</Node>
-			<Node name="script\ddvariablestore.svb">
-				<Prp name="relpath" type="S" value="Script\DDVariableStore.SVB"/>
-			</Node>
-			<Node name="script\editboxfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\EditBoxFunctions.svb"/>
-			</Node>
-			<Node name="script\enginecommands.svb">
-				<Prp name="relpath" type="S" value="Script\EngineCommands.svb"/>
-			</Node>
-			<Node name="script\fileutilities.svb">
-				<Prp name="relpath" type="S" value="Script\FileUtilities.SVB"/>
-			</Node>
-			<Node name="script\fileutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\FileUtilities_X.SVB"/>
-			</Node>
-			<Node name="script\flexdatagrid.svb">
-				<Prp name="relpath" type="S" value="Script\FlexDataGrid.SVB"/>
-			</Node>
-			<Node name="script\flexmenubar.svb">
-				<Prp name="relpath" type="S" value="Script\FlexMenuBar.svb"/>
-			</Node>
-			<Node name="script\flexpopupmenufunctions.svb">
-				<Prp name="relpath" type="S" value="Script\FlexPopupMenuFunctions.svb"/>
-			</Node>
-			<Node name="script\flexscrollbarfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\FlexScrollBarFunctions.svb"/>
-			</Node>
-			<Node name="script\flextreeviewfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\FlexTreeViewFunctions.svb"/>
-			</Node>
-			<Node name="script\flexutilities.svb">
-				<Prp name="relpath" type="S" value="Script\FlexUtilities.svb"/>
-			</Node>
-			<Node name="script\genericmasterfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\GenericMasterFunctions.svb"/>
-			</Node>
-			<Node name="script\genericmasterfunctions_x.svb">
-				<Prp name="relpath" type="S" value="Script\GenericMasterFunctions_X.svb"/>
-			</Node>
-			<Node name="script\genericobjectfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\GenericObjectFunctions.svb"/>
-			</Node>
-			<Node name="script\graphiccontrolfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\GraphicControlFunctions.svb"/>
-			</Node>
-			<Node name="script\groupboxfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\GroupBoxFunctions.svb"/>
-			</Node>
-			<Node name="script\htmldocumentfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\HTMLDocumentFunctions.svb"/>
-			</Node>
-			<Node name="script\htmlfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\HTMLFunctions.svb"/>
-			</Node>
-			<Node name="script\htmlimagefunctions.svb">
-				<Prp name="relpath" type="S" value="Script\HTMLImageFunctions.svb"/>
-			</Node>
-			<Node name="script\htmllinkfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\HTMLLinkFunctions.svb"/>
-			</Node>
-			<Node name="script\htmltablefunctions.svb">
-				<Prp name="relpath" type="S" value="Script\HTMLTableFunctions.svb"/>
-			</Node>
-			<Node name="script\imageutilities.svb">
-				<Prp name="relpath" type="S" value="Script\ImageUtilities.svb"/>
-			</Node>
-			<Node name="script\imageutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\ImageUtilities_X.svb"/>
-			</Node>
-			<Node name="script\javadatagrid.svb">
-				<Prp name="relpath" type="S" value="Script\JavaDataGrid.svb"/>
-			</Node>
-			<Node name="script\javapopupmenufunctions.svb">
-				<Prp name="relpath" type="S" value="Script\JavaPopupMenuFunctions.svb"/>
-			</Node>
-			<Node name="script\labelfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\LabelFunctions.svb"/>
-			</Node>
-			<Node name="script\listboxfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\ListBoxFunctions.svb"/>
-			</Node>
-			<Node name="script\listviewfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\ListViewFunctions.svb"/>
-			</Node>
-			<Node name="script\logutilities.svb">
-				<Prp name="relpath" type="S" value="Script\LogUtilities.svb"/>
-			</Node>
-			<Node name="script\logutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\LogUtilities_X.svb"/>
-			</Node>
-			<Node name="script\menuutilities.svb">
-				<Prp name="relpath" type="S" value="Script\MenuUtilities.svb"/>
-			</Node>
-			<Node name="script\menuutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\MenuUtilities_X.svb"/>
-			</Node>
-			<Node name="script\netdatagrid.svb">
-				<Prp name="relpath" type="S" value="Script\NetDataGrid.svb"/>
-			</Node>
-			<Node name="script\netmenubar.svb">
-				<Prp name="relpath" type="S" value="Script\NetMenuBar.svb"/>
-			</Node>
-			<Node name="script\netpopupmenufunctions.svb">
-				<Prp name="relpath" type="S" value="Script\NetPopupMenuFunctions.svb"/>
-			</Node>
-			<Node name="script\netscrollbarfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\NetScrollBarFunctions.svb"/>
-			</Node>
-			<Node name="script\ntcommandutilities.svb">
-				<Prp name="relpath" type="S" value="Script\NTCommandUtilities.SVB"/>
-			</Node>
-			<Node name="script\ntcommandutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\NTCommandUtilities_X.SVB"/>
-			</Node>
-			<Node name="script\popupmenufunctions.svb">
-				<Prp name="relpath" type="S" value="Script\PopupMenuFunctions.svb"/>
-			</Node>
-			<Node name="script\pushbuttonfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\PushButtonFunctions.svb"/>
-			</Node>
-			<Node name="script\radiobuttonfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\RadioButtonFunctions.svb"/>
-			</Node>
-			<Node name="script\script.tcscript">
-				<Prp name="relpath" type="S" value="Script\Script.tcScript"/>
-			</Node>
-			<Node name="script\scrollbarfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\ScrollBarFunctions.svb"/>
-			</Node>
-			<Node name="script\showallflexcomponents.svb">
-				<Prp name="relpath" type="S" value="Script\ShowAllFlexComponents.svb"/>
-			</Node>
-			<Node name="script\sstreefunctions.svb">
-				<Prp name="relpath" type="S" value="Script\SSTreeFunctions.svb"/>
-			</Node>
-			<Node name="script\stafutilities.svb">
-				<Prp name="relpath" type="S" value="Script\STAFUtilities.SVB"/>
-			</Node>
-			<Node name="script\stepdriver.svb">
-				<Prp name="relpath" type="S" value="Script\StepDriver.svb"/>
-			</Node>
-			<Node name="script\stepdriver_x.svb">
-				<Prp name="relpath" type="S" value="Script\StepDriver_X.svb"/>
-			</Node>
-			<Node name="script\stringutilities.svb">
-				<Prp name="relpath" type="S" value="Script\StringUtilities.svb"/>
-			</Node>
-			<Node name="script\stringutilities_x.svb">
-				<Prp name="relpath" type="S" value="Script\StringUtilities_X.SVB"/>
-			</Node>
-			<Node name="script\tabcontrolfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\TabControlFunctions.svb"/>
-			</Node>
-			<Node name="script\toolbarfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\ToolBarFunctions.svb"/>
-			</Node>
-			<Node name="script\treeviewfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\TreeViewFunctions.svb"/>
-			</Node>
-			<Node name="script\treeviewfunctions_x.svb">
-				<Prp name="relpath" type="S" value="Script\TreeViewFunctions_X.svb"/>
-			</Node>
-			<Node name="script\v2003functions.svb">
-				<Prp name="relpath" type="S" value="Script\V2003Functions.svb"/>
-			</Node>
-			<Node name="script\vsflexgridfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\VSFlexGridFunctions.svb"/>
-			</Node>
-			<Node name="script\win32utilities.svb">
-				<Prp name="relpath" type="S" value="Script\WIN32Utilities.SVB"/>
-			</Node>
-			<Node name="script\windowfunctions.svb">
-				<Prp name="relpath" type="S" value="Script\WindowFunctions.svb"/>
-			</Node>
-			<Node name="stores\files.tcfiles">
-				<Prp name="relpath" type="S" value="Stores\Files.tcFiles"/>
-			</Node>
-			<Node name="stores\objects.tcobjects">
-				<Prp name="relpath" type="S" value="Stores\Objects.tcObjects"/>
-			</Node>
-			<Node name="stores\regions.tcregions">
-				<Prp name="relpath" type="S" value="Stores\Regions.tcRegions"/>
-			</Node>
-			<Node name="stores\stores.tcstores">
-				<Prp name="relpath" type="S" value="Stores\Stores.tcStores"/>
-			</Node>
-			<Node name="tcafs.mds">
-				<Prp name="relpath" type="S" value="TCAFS.MDS"/>
-			</Node>
-		</Node>
 		<Node name="folders">
 			<Node name="folders"/>
 		</Node>
@@ -602,9 +327,110 @@
 				<Prp name="type" type="I" value="1"/>
 				<Prp name="value" type="B" value="-1"/>
 			</Node>
+			<Node name="{7a4ee551-25fe-4c1a-8967-fa26b3c27ad7}">
+				<Prp name="col0enabled" type="B" value="-1"/>
+				<Prp name="col0type" type="I" value="2"/>
+				<Prp name="col1enabled" type="B" value="-1"/>
+				<Prp name="col1type" type="I" value="2"/>
+				<Prp name="col2enabled" type="B" value="-1"/>
+				<Prp name="col2type" type="I" value="1"/>
+				<Prp name="col3enabled" type="B" value="-1"/>
+				<Prp name="col3type" type="I" value="1"/>
+				<Prp name="col4enabled" type="B" value="-1"/>
+				<Prp name="col4type" type="I" value="1"/>
+				<Prp name="col5enabled" type="B" value="-1"/>
+				<Prp name="col5type" type="I" value="5"/>
+				<Prp name="col6enabled" type="B" value="-1"/>
+				<Prp name="col6type" type="I" value="5"/>
+				<Prp name="col7enabled" type="B" value="-1"/>
+				<Prp name="col7type" type="I" value="2"/>
+				<Prp name="col8enabled" type="B" value="-1"/>
+				<Prp name="col8type" type="I" value="2"/>
+				<Prp name="colcount" type="I" value="9"/>
+				<Prp name="colindex" type="I" value="8"/>
+				<Prp name="rowcount" type="I" value="8"/>
+				<Prp name="rowindex" type="I" value="7"/>
+				<Prp name="type" type="I" value="6"/>
+				<Prp name="val0x0" type="I" value="-1"/>
+				<Prp name="val0x1" type="I" value="-1"/>
+				<Prp name="val0x2" type="I" value="-1"/>
+				<Prp name="val0x3" type="I" value="-1"/>
+				<Prp name="val0x4" type="I" value="-1"/>
+				<Prp name="val0x5" type="I" value="-1"/>
+				<Prp name="val0x6" type="I" value="-1"/>
+				<Prp name="val0x7" type="I" value="-1"/>
+				<Prp name="val1x0" type="I" value="-1"/>
+				<Prp name="val1x1" type="I" value="-1"/>
+				<Prp name="val1x2" type="I" value="-1"/>
+				<Prp name="val1x3" type="I" value="-1"/>
+				<Prp name="val1x4" type="I" value="-1"/>
+				<Prp name="val1x5" type="I" value="-1"/>
+				<Prp name="val1x6" type="I" value="-1"/>
+				<Prp name="val1x7" type="I" value="-1"/>
+				<Prp name="val2x0" type="B" value="0"/>
+				<Prp name="val2x1" type="B" value="0"/>
+				<Prp name="val2x2" type="B" value="0"/>
+				<Prp name="val2x3" type="B" value="0"/>
+				<Prp name="val2x4" type="B" value="0"/>
+				<Prp name="val2x5" type="B" value="0"/>
+				<Prp name="val2x6" type="B" value="0"/>
+				<Prp name="val2x7" type="B" value="0"/>
+				<Prp name="val3x0" type="B" value="-1"/>
+				<Prp name="val3x1" type="B" value="-1"/>
+				<Prp name="val3x2" type="B" value="-1"/>
+				<Prp name="val3x3" type="B" value="-1"/>
+				<Prp name="val3x4" type="B" value="-1"/>
+				<Prp name="val3x5" type="B" value="-1"/>
+				<Prp name="val3x6" type="B" value="-1"/>
+				<Prp name="val3x7" type="B" value="-1"/>
+				<Prp name="val4x0" type="B" value="0"/>
+				<Prp name="val4x1" type="B" value="0"/>
+				<Prp name="val4x2" type="B" value="0"/>
+				<Prp name="val4x3" type="B" value="0"/>
+				<Prp name="val4x4" type="B" value="0"/>
+				<Prp name="val4x5" type="B" value="0"/>
+				<Prp name="val4x6" type="B" value="0"/>
+				<Prp name="val4x7" type="B" value="0"/>
+				<Prp name="val5x0" type="S" value="Apple iPad"/>
+				<Prp name="val5x1" type="S" value="Apple iPhone 3"/>
+				<Prp name="val5x2" type="S" value="Apple iPhone 5"/>
+				<Prp name="val5x3" type="S" value="Blackberry Z10"/>
+				<Prp name="val5x4" type="S" value="Nokia Lumia 800"/>
+				<Prp name="val5x5" type="S" value="Samsung Galaxy Mini"/>
+				<Prp name="val5x6" type="S" value="Samsung Galaxy S3"/>
+				<Prp name="val5x7" type="S" value="Samsung Nexus 10"/>
+				<Prp name="val6x0" type="S" value="Mozilla/5.0 (iPad; CPU OS 6_1_3 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10B329 Safari/8536.25"/>
+				<Prp name="val6x1" type="S" value="Mozilla/5.0 (iPhone; U; CPU iPhone OS 3_0 like Mac OS X; en-us) AppleWebKit/528.18 (KHTML, like Gecko) Version/4.0 Mobile/7A341 Safari/528.16"/>
+				<Prp name="val6x2" type="S" value="Mozilla/5.0 (iPhone; CPU iPhone OS 6_1_4 like Mac OS X) AppleWebKit/536.26 (KHTML, like Gecko) Version/6.0 Mobile/10B350 Safari/8536.25"/>
+				<Prp name="val6x3" type="S" value="Mozilla/5.0 (BB10; Touch) AppleWebKit/537.10+ (KHTML, like Gecko) Version/10.0.9.2372 Mobile Safari/537.10+"/>
+				<Prp name="val6x4" type="S" value="Mozilla/5.0 (compatible; MSIE 9.0; Windows Phone OS 7.5; Trident/5.0; IEMobile/9.0; NOKIA; Lumia 800)"/>
+				<Prp name="val6x5" type="S" value="Mozilla/5.0 (Linux; U; Android 2.3.6; en-us; GT-S5570I Build/GINGERBREAD) AppleWebKit/533.1 (KHTML, like Gecko) Version/4.0 Mobile Safari/533.1"/>
+				<Prp name="val6x6" type="S" value="Mozilla/5.0 (Linux; U; Android 4.0.4; en-us; GT-I9300 Build/IMM76D) AppleWebKit/534.30 (KHTML, like Gecko) Version/4.0 Mobile Safari/534.30"/>
+				<Prp name="val6x7" type="S" value="Mozilla/5.0 (Linux; Android 4.2.1; Nexus 10 Build/JOP40D) AppleWebKit/537.22 (KHTML, like Gecko) Chrome/25.0.1364.37 Safari/537.22"/>
+				<Prp name="val7x0" type="I" value="768"/>
+				<Prp name="val7x1" type="I" value="320"/>
+				<Prp name="val7x2" type="I" value="320"/>
+				<Prp name="val7x3" type="I" value="342"/>
+				<Prp name="val7x4" type="I" value="480"/>
+				<Prp name="val7x5" type="I" value="240"/>
+				<Prp name="val7x6" type="I" value="360"/>
+				<Prp name="val7x7" type="I" value="800"/>
+				<Prp name="val8x0" type="I" value="1024"/>
+				<Prp name="val8x1" type="I" value="480"/>
+				<Prp name="val8x2" type="I" value="568"/>
+				<Prp name="val8x3" type="I" value="570"/>
+				<Prp name="val8x4" type="I" value="800"/>
+				<Prp name="val8x5" type="I" value="320"/>
+				<Prp name="val8x6" type="I" value="640"/>
+				<Prp name="val8x7" type="I" value="1280"/>
+			</Node>
 			<Node name="{7e9d3e8b-dff5-4737-a877-e94b6b932bcd}">
 				<Prp name="type" type="I" value="1"/>
 				<Prp name="value" type="B" value="-1"/>
+			</Node>
+			<Node name="{829bc6ca-56d1-46a4-89b9-e15802964005}">
+				<Prp name="type" type="I" value="1"/>
+				<Prp name="value" type="B" value="0"/>
 			</Node>
 			<Node name="{85cd048a-29ff-4abf-95a6-b915aea2c10d}">
 				<Prp name="type" type="I" value="1"/>
@@ -712,6 +538,24 @@
 				<Prp name="val0x2" type="S" value="Hybrid"/>
 				<Prp name="val0x3" type="S" value="Tree"/>
 			</Node>
+			<Node name="{acff4ef1-2d8d-4a5b-a55f-6f64df82662b}">
+				<Prp name="col0enabled" type="B" value="-1"/>
+				<Prp name="col0type" type="I" value="5"/>
+				<Prp name="colcount" type="I" value="1"/>
+				<Prp name="colindex" type="I" value="0"/>
+				<Prp name="rowcount" type="I" value="9"/>
+				<Prp name="rowindex" type="I" value="0"/>
+				<Prp name="type" type="I" value="6"/>
+				<Prp name="val0x0" type="S" value="None"/>
+				<Prp name="val0x1" type="S" value="Apple iPad"/>
+				<Prp name="val0x2" type="S" value="Apple iPhone 3"/>
+				<Prp name="val0x3" type="S" value="Apple iPhone 5"/>
+				<Prp name="val0x4" type="S" value="Blackberry Z10"/>
+				<Prp name="val0x5" type="S" value="Nokia Lumia 800"/>
+				<Prp name="val0x6" type="S" value="Samsung Galaxy Mini"/>
+				<Prp name="val0x7" type="S" value="Samsung Galaxy S3"/>
+				<Prp name="val0x8" type="S" value="Samsung Nexus 10"/>
+			</Node>
 			<Node name="{ae3f26d8-a5bd-4172-9f50-f2b9d1d03611}">
 				<Prp name="type" type="I" value="1"/>
 				<Prp name="value" type="B" value="-1"/>
@@ -769,6 +613,19 @@
 			<Node name="{d80391d4-892f-4cec-865e-b7facb3fac84}">
 				<Prp name="type" type="I" value="2"/>
 				<Prp name="value" type="I" value="10"/>
+			</Node>
+			<Node name="{d852bfd9-d446-4748-906f-1fa580d41304}">
+				<Prp name="col0enabled" type="B" value="-1"/>
+				<Prp name="col0type" type="I" value="1"/>
+				<Prp name="col1enabled" type="B" value="-1"/>
+				<Prp name="col1type" type="I" value="5"/>
+				<Prp name="colcount" type="I" value="2"/>
+				<Prp name="colindex" type="I" value="1"/>
+				<Prp name="rowcount" type="I" value="1"/>
+				<Prp name="rowindex" type="I" value="0"/>
+				<Prp name="type" type="I" value="6"/>
+				<Prp name="val0x0" type="B" value="-1"/>
+				<Prp name="val1x0" type="S" value="%PRODUCT_LOCATION%\Open Apps\Flex\FlashInjector.swf"/>
 			</Node>
 			<Node name="{db42ceab-bfc4-40db-9f48-9197d35fb5e2}">
 				<Prp name="col0enabled" type="B" value="-1"/>
@@ -1119,6 +976,10 @@
 				<Prp name="type" type="I" value="5"/>
 				<Prp name="value" type="S" value="Format: PNG; Compression level: 4"/>
 			</Node>
+			<Node name="{f7c29680-06bb-4f85-b0e3-c06ae2282a66}">
+				<Prp name="type" type="I" value="1"/>
+				<Prp name="value" type="B" value="0"/>
+			</Node>
 			<Node name="{fb1caf99-7fa6-447c-b963-d862ca8bff89}">
 				<Prp name="type" type="I" value="2"/>
 				<Prp name="value" type="I" value="3000"/>
@@ -1349,7 +1210,7 @@
 				<Prp name="type" type="I" value="6"/>
 			</Node>
 			<Prp name="key" type="S" value="{CE53983B-7DB5-4713-89ED-5DE8A7B6FEB1}"/>
-			<Prp name="settingsversion" type="S" value="9.31"/>
+			<Prp name="settingsversion" type="S" value="10.0"/>
 		</Node>
 		<Node name="test data">
 			<Node name="child list">
@@ -1377,6 +1238,6 @@
 			<Prp name="version" type="I" value="2"/>
 		</Node>
 		<Prp name="signature" type="S" value="{362A8EE5-675E-43A9-869D-06ECE80B0CB4}"/>
-		<Prp name="version" type="S" value="9.0"/>
+		<Prp name="version" type="S" value="10.0"/>
 	</Node>
 </Nodes>
