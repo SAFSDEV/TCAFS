@@ -168,7 +168,7 @@
 			</Node>
 			<Node name="{2fcb2eb2-336e-4fd4-96a3-8710a73addd8}">
 				<Prp name="type" type="I" value="1"/>
-				<Prp name="value" type="B" value="0"/>
+				<Prp name="value" type="B" value="-1"/>
 			</Node>
 			<Node name="{323facda-38e8-4c1b-b22c-99e0ab90eadc}">
 				<Prp name="type" type="I" value="5"/>
