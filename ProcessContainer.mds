@@ -163,7 +163,7 @@
 			</Node>
 			<Node name="{2044dc7f-423e-4668-8114-68d23ae97ad6}">
 				<Prp name="type" type="I" value="2"/>
-				<Prp name="value" type="I" value="50"/>
+				<Prp name="value" type="I" value="0"/>
 			</Node>
 			<Node name="{239ae5e0-d898-415d-8ecb-ebeb31d3f66f}">
 				<Prp name="col0enabled" type="B" value="-1"/>
@@ -208,7 +208,7 @@
 			</Node>
 			<Node name="{2fcb2eb2-336e-4fd4-96a3-8710a73addd8}">
 				<Prp name="type" type="I" value="1"/>
-				<Prp name="value" type="B" value="0"/>
+				<Prp name="value" type="B" value="-1"/>
 			</Node>
 			<Node name="{323facda-38e8-4c1b-b22c-99e0ab90eadc}">
 				<Prp name="type" type="I" value="5"/>
