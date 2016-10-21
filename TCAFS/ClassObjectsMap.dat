@@ -1,0 +1,154 @@
+# 06/06/2011
+# ClassObjectMap.DAT
+# 06/06/2011 Carl Nagle Original Release
+# 09/05/2011 (JunwuMa) Added TextInput mapping for Flex
+# 08/31/2012 (Dharmesh) Added SAS custom class (combobox) support.
+#
+#============  DO NOT MODIFY THE CONTENTS OF THIS FILE =============
+#
+# This file is used by algorithms searching an Application's GUI 
+# hierarchy for components that match a given recognition string.
+# The recognition strings provide a generic means for us to identify 
+# a component by its class, type, and other characteristics.
+# Modification to this file will alter the way we recognize 
+# and locate components and likely result in unsuccessful automation.
+#
+# This file provides object Class to object Type mapping--and vice-
+# versa.  For example, if we have in our possession a class of 
+# javax.swing.JFrame we will use the map to find that the JFrame 
+# class is of type JavaWindow.  A given class may actually have a 
+# comma-separated list of valid object types mapped.
+#
+# Ex:
+#
+# javax.swing.JFrame = Window, JavaWindow
+#
+# Conversely, if we have a recognition string that says it wants us 
+# to find a "Type=JavaWindow", we use this map to find out which 
+# classes are to be considered a match for "Type=JavaWindow".
+#
+# Tools using this mapping should support the idea of classname 
+# wildcarding for successful matching.  That is, treat the left-side 
+# classnames below as 'keys' in a Hashtable, but we should successfully 
+# match a class if the stored 'key' contains "*" asterisk wildcard 
+# characters.
+#
+# Example: A left-side classname key of "System.Window.Forms.Control*" 
+# should be interpretted to match ANY classname containing the 
+# substring "System.Window.Forms.Control".  Whatever Type mappings 
+# are assigned to that 'key' will be returned for any class containing 
+# a substring matching the 'key'.
+#
+# Ex:
+#
+# System.Window.Forms* = Window, NETWindow
+#
+# (the above should expect to match "System.Window.Forms0816Ab")
+#
+# If the left-side classname key contains no "*" wildcard, then a 
+# key to classname match must be an exact case-sensitive match.
+# 
+# This file is used in conjuntion with ObjectTypesMap.dat
+# 
+# For example, when we intend to perform an action on a Java menu 
+# item, we may find the recognition string "Type=JavaMenu" is used 
+# to help identify the menu item.  We will locate the appropriate 
+# object instance based on the recognition string mapping to acceptable 
+# menu classes defined in this file.
+# 
+# Once successful here, we will then search ObjectTypesMap.dat and 
+# see that JMenuBars, JMenus, and JMenuItems (all "JavaMenu"s) should 
+# be handled by the "MenuBar" component functions library.
+#===================================================================
+
+DropDownList* = ListView
+
+ComboBox*     = ComboBox
+*Combo	      = ComboBox
+ComboListBox* = ComboBox
+Select*       = ComboBox
+dijit dijitReset dijitInline dijitLeft dijitTextBox dijitComboBox* = ComboBox
+ComboEdit*    = ComboEditBox
+
+TextArea*    = EditBox
+TextField*   = EditBox
+TextBox*     = EditBox
+EditBox*     = EditBox
+textEntry*   = EditBox
+.Edit.*      = EditBox
+PasswordBox* = EditBox
+TextInput*   = EditBox
+*TextBox     = EditBox
+
+CheckBoxList* = ListView
+CheckBox*     = CheckBox
+
+HTMLDocument* = HTMLDocument
+HTMLImage*    = HTMLImage
+HTMLLink*     = HTMLLink
+HTMLTable*    = HTMLTable
+
+;Catch-All Generic HTML support
+;MUST be the last HTML mapping for ANY type of HTML object.
+HTML*         = HTML
+
+JavaMenu*       = PopupMenu
+JavaPopupMenu*  = PopupMenu
+JavaTable*      = JavaTable
+PropertySheet   = JavaTable
+JavaTree*       = JavaTree
+
+JMenu*       = PopupMenu
+JPopupMenu*  = PopupMenu
+JTable*      = JavaTable
+JTree*       = JavaTree
+
+Label*        = Label
+
+ListBox*      = ListBox
+ListView*     = ListView
+;Catch-All List Support
+List*         = ListView
+
+RadioButton*  = RadioButton
+
+Button*       = PushButton
+
+DataGrid*     = DataGrid
+GridView*     = DataGrid
+
+ScrollBar*    = ScrollBar
+
+TabControl*   = TabControl
+TabBar*       = TabControl
+
+ToolBar*      = ToolBar
+ToolStrip*	  = ToolBar
+
+TreeView*     = TreeView
+;HTML5 Dojo tree
+dijitTree*    = TreeView 
+;Catch-All Tree Support
+Tree*         = TreeView
+
+
+GraphicControl* = GraphicControl
+
+GroupBox*     = GroupBox
+
+Window*       = Window
+IEFrame*	  = Window
+
+MenuControl*         = MenuBar
+
+#ContextMenu will be used internally
+ContextMenu*  = ContextMenu
+
+#Menu* must be put after ContextMenu*
+#the more generic the class name is, the lower it should be put in this mapping file
+Menu*         = MenuBar
+
+#Form mapping should be put as the last line
+#For .NET object, component name is something like WinFormsObject("compName")
+#our program will use this name to map before using its real class name
+Form*         = Form
