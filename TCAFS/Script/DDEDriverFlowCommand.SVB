@@ -1,0 +1,934 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'#    DDDriverCommands.SBL  SOURCECODE
+'#
+'# MODULE DESCRIPTION:
+'#
+'# The documentation for each function is provided as reference for DDE users 
+'# when developing DDE test tables.  This DDE format and syntax information IS 
+'# intended for public use and does not normally change with the underlying code.
+'#
+'# The routines themselves are not intended for public use.
+'# Their internal functionality and their declaration prototypes 
+'# are subject to change as deemed necessary to support the drivers 
+'# mentioned above.
+'#
+'#
+'# This library is defined by:
+'#
+'# DDDriverFlowCommands      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release. Extracted from DDDriverCommands.SBL
+'#      NOV 22, 2011    (Lei Wang)    Modify Function DDDriverFlowCommand(): Call SDinitOTRDGUIIDVariables()
+'#                                  instead of FillGUIIDs() to get window and component object 
+'##############################################################################
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT MenuUtilities_X
+'USEUNIT DDUtilities_X
+'USEUNIT StepDriver_X
+'USEUNIT StringUtilities
+'USEUNIT DDGUIUtilities
+'USEUNIT LogUtilities
+'USEUNIT LogUtilities_X
+
+'# PRIVATE DEPENDENCIES
+'USEUNIT DDDriverCommands
+
+'# FORWARD DECLARATIONS
+
+
+'#########################################################################
+'#
+'#  Function DDECallScript(scriptName as String, 
+'#                         guiInfo As AUGUIInfo, 
+'#                         statusInfo As AUStatusInfo
+'#                        ) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Invokes an automation tool script with the provided scriptName.  The 
+'#      routine logs the start and end of the script and sets and receives 
+'#      the global <a href="ApplicationUtilities.htm">ApplicationUtilities'</a> ScriptGUIInfo and ScriptStatusInfo 
+'#      structures for the script.  ApplicationUtilities also contains the 
+'#      routines necessary to increment appropriate test status counters.
+'#
+'#      No error detection is done on the provided scriptName.  The script should 
+'#      already have been verified to exist prior to this call.  This is handled 
+'#      by the DDEDriverCommand and DDEImpliedCallScript routines.
+'#      
+'#
+'#      CALLING A SCRIPT AND PASSING PARAMETERS TO IT:
+'#
+'#      You should assign script arguments or parameters to DDVariables as shown in the
+'#      example below.  You can simply retrieve the value of each variable using 
+'#      the <a href="DDVariableStore.htm#DDVGetVariableValue">DDVariableStore.DDVGetVariableValue</a> routine.
+'#
+'#      CALLING SCRIPTS EXAMPLES:
+'#
+'#      EnterNewUser   ^name.first=John   ^name.last=Smith   ^dept=BST   ^ext=x9999
+'#      or
+'#      C   CallScript   EnterNewUser   ^name.first=John   ^name.last=Smith   ^dept=BST   ^ext=x9999
+'#
+'#      &lt; continue with more table records &gt;
+'#
+'#      See <a href="UsingDDVariables.htm">Using DDVariables</a> for more information on this nifty capability!      
+'#
+'#
+'#      This routine is not intended for public use.
+'#      Internal functionality and declaration prototypes 
+'#      are subject to change as deemed necessary to support the core drivers.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      scriptName      String name of the script to call. (no file extension)
+'#      AUGUIInfo       from the calling Driver
+'#      AUStatusInfo    from the calling Driver
+'#
+'# RETURNS:
+'#
+'#      Returns DDU_NO_SCRIPT_FAILURE if Script processing occurred.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release
+'#
+'###########################################################################
+Function DDECallScript (scriptName, statusInfo)
+    
+    On Error Resume Next
+    
+    With otrd
+        
+        .statuscode = DDU_GENERAL_SCRIPT_FAILURE
+        
+        LogMessage "Calling Script """& scriptName &"""", "", ""
+        
+        
+        .StatusCode = Runner.CallMethod(scriptName)         
+
+        LogMessage "End of Script """& scriptName &"""", "", ""
+        
+        if err.code = 0 Then
+            .statuscode = DDU_NO_SCRIPT_FAILURE        
+        Else
+            LogMessage "Error calling script " & scriptName & " it may not exist", FAILED_MESSAGE, ""
+        end If
+        
+    End With
+
+    DDECallScript = otrd.statuscode
+
+End Function
+
+'returns True if a record matches the given block ID
+' inputBlockID  the BlockID we are trying to match
+' inputRecord   the test record to test. this should be the raw record before
+'               variable/expression substitution
+' delim         the delimiter of the inputRecord
+Function IsTargetBlock (inputBlockID, inputRecord, delim)
+
+    IsTargetBlock = False
+    Dim temps
+
+    'Get and process the RECORD TYPE (this field could be a variable/expression)
+    'we don't want to process the whole record unless its record type is "B".
+    'otherwise, we might accidentally perform variable assignments that might
+    'appear on the record we are testing.
+    Dim RecordType
+    RecordType = UCase(GetTrimmedField(inputRecord, 1, delim))
+    If RecordType <> DDU_BLOCKID Then
+        If DDU_EXPRESSIONS_MODE Then
+            RecordType = DDVProcessExpression (RecordType)
+        Else
+            ' this function might add enclosing quotes
+            temps = DDVSubstituteVariables (RecordType, 1, delim)
+            If temps <> RecordType Then RecordType = GetTrimmedQuotedString(temps)
+            RecordType = GetQuotedString(DDVExtractVariables (RecordType, 1, delim))
+        End If
+    End If
+
+    'only deal with BLOCKID record 
+    If RecordType <> DDU_BLOCKID Then Exit Function
+
+    Dim tableBlockID
+    tableBlockID = GetTrimmedField(inputRecord, 2, delim)
+    If CompareStr(inputBlockID, tableBlockID, 1) = 0 Then
+        IsTargetBlock = True
+        Exit Function
+    End If
+
+    If DDU_EXPRESSIONS_MODE Then
+        tableBlockID = DDVProcessExpression (tableBlockID)
+    Else
+        temps = DDVSubstituteVariables (tableBlockID, 1, delim)
+        If temps <> tableBlockID Then tableBlockID = GetTrimmedQuotedString(temps)
+        tableBlockID = GetQuotedString(DDVExtractVariables (tableBlockID, 1, delim))
+    End If
+            
+    If CompareStr(inputBlockID, tableBlockID, 1) = 0 Then
+        IsTargetBlock = True
+        Exit Function
+    End If
+
+End Function
+
+'attempt to locate the blockId in the current table.
+'if found the file pointer will be set such that the blockID is the next line to execute.
+'if not found, the file pointer will be such that the next line in the table will execute.
+'the routine will log all failures and increment GeneralFailure if the block is not found.
+'#      APR 01, 2005    (RDUCHARME) Added logic to support table caching
+'#      NOV 15, 2005    (Bob Lawler)    Updated failure message when BlockID can not be found
+'#                                   and logged inputrecord with that failure. (RJL) 
+'#
+Function DDELocateBlockID (inputBlockID, statusInfo, eFlag)
+
+      Dim status
+      
+      otrd.setStatusInfo(CStr(inputBlockID))
+      
+      DDELocateBlockID = DDU_BRANCH_TO_BLOCKID
+       
+       
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function DDDriverFlowCommand(DriverCMD As String, guiInfo As AUGUIInfo, statusInfo As AUStatusInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Processes a DDE DRIVER COMMAND from the AUGUIInfo.InputRecord provided.
+'#      Driver commands are not treated as test commands but instructions to 
+'#      the Drivers for setting parameters of the test environment, running 
+'#      other scripts, or other stuff (whatever gets in here).
+'#
+'#      Different driver commands have different parameters as described below.
+'#      For reference, the first fields are defined below:
+'#
+'#      Field #1:   The "C" = DRIVER COMMAND. 
+'#      Field #2:   The Driver Command to execute. (see definitions below).
+'#
+'#      Example:
+'#
+'#          c , SetApplicationMap , "AppMap.map"
+'#
+'#
+'#      Parameters must be placed in the order specified.  
+'#      Parameters numbered in brackets are optional.  
+'#      However, to use an optional parameter which follows other optional 
+'#      parameters all the preceding parameters must exist or at least have 
+'#      field delimited space reserved for them.
+'#
+'#
+'#         COMMAND         Fld# PARAMETER 
+'#      ==============      ====================================================
+'#
+'#      CallScript          3 - The name of the script to execute.
+'#                              Since the script is executed as a command of the 
+'#                              Driver and NOT a test; test_record, test_passes, and
+'#                              test_failures information within the AUStatusInfo structure 
+'#                              is not updated.  If the called script wishes to record 
+'#                              tests attempted, pass, and failure counts then it must 
+'#                              do so itself by updating the <a href="ApplicationUtilities.htm#globals">ScriptStatusInfo</a> fields 
+'#                              accordingly.  The name of the script must not include 
+'#                              the file extension.
+'#                          4-N Any number of parameters you wish to pass to the script.
+'#                              These parameters are passed as DDVariables.
+'#                              The Script can retrieve DDVariable values from the <a href="UsingDDVariables.htm#in_scripts">DDVariableStore</a>.
+'#                              These parameters are, of course, specific to each called script.
+'#                              The variables and their values are available to the script 
+'#                              and the rest of the DDE.
+'#
+'#
+'#   OnEqualGotoBlockID     3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the two values in Fields 4 and 5 
+'#                              are equal.
+'#                          4 - value1 for the comparison.
+'#                          5 - value2 for the comparison.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred. If the values
+'#                              can be converted to numbers they are converted and a 
+'#                              numerical comparison is performed.  If the values cannot
+'#                              be converted to numbers then a string comparison is performed
+'#                         [6]- string comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison for string comparisons. Omit or set to any other value 
+'#                              to perform a case-sensitive string comparison.
+'#
+'#
+'#   OnLessThanGotoBlockID  3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the value in Field 4 is less than 
+'#                              the value in Field 5 via a numeric or string comparison.
+'#                          4 - value to be compared.
+'#                          5 - value to be compared against.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred. If the values
+'#                              can be converted to numbers they are and a numerical 
+'#                              comparison is performed.  If the values cannot be converted to 
+'#                              numbers a string comparison is used.
+'#                         [6]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'# OnGreaterThanGotoBlockID 3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the value in Field 4 is greater than 
+'#                              the value in Field 5 via a numeric or string comparison
+'#                          4 - value1 number to be compared.
+'#                          5 - value2 number to be compared against.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred. If the values
+'#                              can be converted to numbers they are and a numerical 
+'#                              comparison is performed.  If the values cannot be converted to 
+'#                              numbers a string comparison is used.
+'#                         [6]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#   OnInRangeGotoBlockID  3 - The BlockID within the current table to find and 
+'#                              transfer control to IF Field 4 is within the range 
+'#                              identified by Field 5 and Field 6 values via a numeric 
+'#                              or string comparison
+'#                          4 - value1 number to be compared.
+'#                          5 - value2 low end of range to compared against.
+'#                          6 - value3 high end of range to compared against.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred  If the values
+'#                              can be converted to numbers they are and a numerical 
+'#                              comparison is performed.  If the values cannot be converted to 
+'#                              numbers a string comparison is used.
+'#                         [7]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison string comparison. Omit or set to any other value to 
+'#                              perform a case-sensitive comparison. 
+'#
+'#
+'#   OnNotInRangeGotoBlockID  3 - The BlockID within the current table to find and 
+'#                              transfer control to IF Field 4 is not within the range 
+'#                              identified by Field 5 and Field 6 values via a numeric 
+'#                              or string comparison
+'#                          4 - value1 number to be compared.
+'#                          5 - value2 low end of range to compared against.
+'#                          6 - value3 high end of range to compared against.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred. If the values
+'#                              can be converted to numbers they are and a numerical 
+'#                              comparison is performed.  If the values cannot be converted to 
+'#                              numbers a string comparison is used.
+'#                         [7]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              string comparison. Omit or set to any other value to 
+'#                              perform a case-sensitive string comparison. 
+'#
+'#
+'#   OnContainsGotoBlockID  3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the value in Field 4 contains Field 5
+'#                              pass a case-sensitive string comparison.
+'#                          4 - value1 for the case-sensitive comparison.
+'#                          5 - value2 for the case-sensitive comparison.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                         [6]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#
+'#   OnNotContainsGotoBlockID  3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the value in Field 4 does not contain Field 5
+'#                              pass a case-sensitive string comparison.
+'#                          4 - value1 for the case-sensitive comparison.
+'#                          5 - value2 for the case-sensitive comparison.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                         [6]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#
+'#   OnNotEqualGotoBlockID  3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the two values in Fields 4 and 5 
+'#                              do not pass a case-sensitive string comparison.
+'#                          4 - value1 for the case-sensitive comparison.
+'#                          5 - value2 for the case-sensitive comparison.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                         [6]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#
+'#   OnFileExistGotoBlockID 3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the file in field 4
+'#                              exists.
+'#                          4 - filename of file for existince verification.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                              The file is assumed to be in Datapool\Test unless
+'#                              the user specifies a full or relative path to some 
+'#                              other location. If a relative path is specified, it is 
+'#                              relative to the project directory.
+'#                         [5]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#
+'#   OnFileNotExistGotoBlockID
+'#
+'#                          3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the file in field 4
+'#                              does not exist.
+'#                          4 - filename of file for existince verification.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                              The file is assumed to be in Datapool\Test unless
+'#                              the user specifies a full or relative path to some 
+'#                              other location. If a relative path is specified, it is 
+'#                              relative to the project directory.
+'#                         [5]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#   OnDirectoryExistGotoBlockID
+'#
+'#                          3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the Directoryname in field 4
+'#                              exists.
+'#                          4 - directoryname of directory for existince verification.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                              The directory always requires to be specified in a full
+'#                              path to some other location.
+'#                         [5]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#
+'#   OnDirectoryNotExistGotoBlockID
+'#
+'#                          3 - The BlockID within the current table to find and 
+'#                              transfer control to IF the Directory in field 4
+'#                              does not exist.
+'#                          4 - directoryname of directory for existince verification.
+'#                              Values are retrieved with GetTrimmedQuotedField AFTER 
+'#                              normal variable substitutions have occurred.
+'#                              The directory always requires to be specified in a full
+'#                              path to some other location.
+'#                         [5]- comparison mode. (Default to case-sensitive mode)
+'#                              Set to "CaseInsensitive" to perform a case-insensitive
+'#                              comparison. Omit or set to any other value to perform a
+'#                              case-sensitive comparison.
+'#
+'#
+'#   OnGUIExistsGotoBlockID 3 - The BlockID within the current table to find and
+'#                              transfer control to IF the GUI component specified
+'#                              in Fields 4 and 5 is found on the screen within the
+'#                              timeout period.
+'#                          4 - The WINDOW ID of the object to look for. Use the named
+'#                              reference given the window in the application map.
+'#                          5 - The COMPONENT ID of the object to look for. Use the
+'#                              named reference given the component in the application
+'#                              map. If the window IS the object to look for then both
+'#                              field 4 and 5 will be the same.
+'#                         [6]- maximum timeout in seconds to wait for the GUI before
+'#                              exiting (no branch). Default is 15 seconds.
+'#
+'#
+'#   OnGUINotExistGotoBlockID   3 - The BlockID within the current table to find and
+'#                                  transfer control to IF the GUI component specified
+'#                                  in Fields 4 and 5 is not found on the screen within
+'#                                  the timeout period.
+'#                              4 - The WINDOW ID of the object to look for. Use the named
+'#                                  reference given the window in the application map.
+'#                              5 - The COMPONENT ID of the object to look for. Use the
+'#                                  named reference given the component in the application
+'#                                  map. If the window IS the object to look for then both
+'#                                  field 4 and 5 will be the same.
+'#                             [6]- maximum timeout in seconds to wait for the GUI to 
+'#                                  disappear before exiting (no branch). Default is 15 seconds.
+'#
+'#
+'#   OnMenuItemContainsStateGotoBlockID  
+'#                          3 - The BlockID within the current table to find and 
+'#                              transfer control to if the value in Field 5 is 
+'#                              part of the state information of the menuitem in Field 6.
+'#                          4 - The window name from the data table
+'#                          5 - The component name from the data table 
+'#                          6 - Menu->MenuItem hierarchy string to identify which menuitem 
+'#                              to test. This menu hierarchy is case-sensitive
+'#                          7 - Expected status string (or part thereof) to verify. 
+'#                              Ex: "Enabled Checked" OR "Disabled Grayed" etc. Each item 
+'#                              separated by a space will be evaluated separately so the order 
+'#                              of the status items does not matter. These status items are 
+'#                              case-sensitive.
+'#
+'#   OnPartialMenuItemContainsStateGotoBlockID  
+'#                          3 - The BlockID within the current table to find and 
+'#                              transfer control to if the value in Field 5 is 
+'#                              part of the state information of the menuitem in Field 6. 
+'#                              This command allows for a partial match on the menuItem.
+'#                          4 - The window name from the data table
+'#                          5 - The component name from the data table 
+'#                          6 - Menu->MenuItem hierarchy string to identify which menuitem 
+'#                              to test. This menu hierarchy is case-sensitive
+'#                          7 - Expected status string (or part thereof) to verify. 
+'#                              Ex: "Enabled Checked" OR "Disabled Grayed" etc. Each item 
+'#                              separated by a space will be evaluated separately so the order 
+'#                              of the status items does not matter. These status items are 
+'#                              case-sensitive.
+'#
+'#
+'# SetNoScriptFailureBlock [3] - The BlockID within the current table to execute 
+'#                              upon NoScriptFailure status.  Clear the setting 
+'#                              by using an empty string "" or by providing no 
+'#                              BlockID.
+'#
+'#
+'# SetGeneralScriptFailureBlock [3] - The BlockID within the current table to execute 
+'#                              upon GeneralScriptFailure status.  Clear the setting 
+'#                              by using an empty string "" or by providing no 
+'#                              BlockID.
+'#
+'#
+'# SetScriptWarningBlock   [3] - The BlockID within the current table to execute 
+'#                              upon ScriptWarning status.  Clear the setting 
+'#                              by using an empty string "" or by providing no 
+'#                              BlockID.
+'#
+'#
+'# SetInvalidFileIOBlock   [3] - The BlockID within the current table to execute 
+'#                              upon InvalidFileIO status.  Clear the setting 
+'#                              by using an empty string "" or by providing no 
+'#                              BlockID.
+'#
+'#
+'# SetExitTableBlock       [3] - The BlockID within the current table to execute 
+'#                              upon ExitTable command.  Clear the setting 
+'#                              by using an empty string "" or by providing no 
+'#                              BlockID.
+'#
+'#
+'# SetScriptNotExecutedBlock [3] - The BlockID within the current table to execute 
+'#                              upon ScriptNotExecuted error.  Clear the setting 
+'#                              by using an empty string "" or by providing no 
+'#                              BlockID.
+'#
+'#
+'#
+'#      This DDEDriver Command routine is not intended for public use.
+'#      Internal functionality and declaration prototypes 
+'#      are subject to change as deemed necessary to support the core drivers.
+'#
+'#
+'# PARAMETERS:
+'#
+'#      DriverCMD       from the calling DDDriverCommands library.
+'#      AUGUIInfo       from the calling Driver
+'#      AUStatusInfo    from the calling Driver
+'#
+'# RETURNS:
+'#
+'#      Normally DDU_NO_SCRIPT_FAILURE unless something unforeseen causes the 
+'#      routine to exit prematurely.
+'#
+'#      Returns DDU_SCRIPT_NOT_EXECUTED if no matching driver command was found.
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 19, 2006
+'# History:
+'#
+'#      SEP 19, 2006    Original Release Extracted from DDDriverCommands.SBL
+'#
+'############################################################################
+Function DDDriverFlowCommand(DriverCMD, statusInfo)
+    
+    Dim field(10)
+    
+    Dim status
+    Dim tempstring
+    Dim value1
+    Dim value2
+    Dim value3
+    Dim hMenu
+    Dim menuitem
+    Dim testState
+    Dim menuState
+    Dim info 
+    Dim match
+    Dim hWndValue
+    Dim blockid
+    Dim msgtype
+
+    With otrd
+        
+      .statuscode = DDU_GENERAL_SCRIPT_FAILURE 'initialize this function as failed
+    
+      Select Case UCase(DriverCMD)        
+
+        Case SDCALL_SCRIPT             
+        
+             field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)
+             if field(3) = "" then
+                LogMessage "Missing CallScript Script specification in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           .FAILED_MESSAGE, .InputRecord
+             else
+             
+                 Log.Enabled = False
+                 status = Utilities.FileExists(field(3))
+                 Log.Enabled = True
+
+                 'if a SCRIPT by this name does not exist in the current Project 
+                 'then we have a script failure
+                 if status <> 1 then
+                
+                     LogMessage "SCRIPT NOT FOUND in table "& .FileName _
+                                &" at line "& .LineNumber, _
+                                FAILED_MESSAGE, _
+                                .InputRecord
+                           
+                     .statuscode = DDU_GENERAL_SCRIPT_FAILURE
+                 else                       
+                     .statuscode = DDECallScript (field(3), statusInfo)
+                end if
+             end if
+
+        Case DDU_ON_IN_RANGE_GOTO_BLOCKID
+
+             field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)  'blockid
+             field(4) = GetTrimmedQuotedField(.inputrecord, 4, .separator)  'value1
+             field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)  'low end of range
+             field(6) = GetTrimmedQuotedField(.inputrecord, 6, .separator)  'high end of range
+             field(7) = GetTrimmedQuotedField(.inputrecord, 7, .separator)  'mode            
+
+             if field(3) = "" then
+                LogMessage "Missing required BLOCKID specification in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           .FAILED_MESSAGE, .InputRecord
+
+             else
+                 if (IsNumeric(field(4)) = -1) And (IsNumeric(field(5)) = -1) And (IsNumeric(field(6)) = -1) then
+                    value1 = CDBL(field(4))
+                    value2 = CDBL(field(5))
+                    value3 = CDBL(field(6))                
+                    if (value1 >= value2) AND (value1 <= value3) then
+                        LogMessage DriverCMD &" value (" & field(4) &") within range (" & field(5) &" - " & field(6) & "). Attempting branch to """& field(3) &"""", "", ""
+                        'this routine logs successful or failed branching
+                        .statuscode = DDELocateBlockID(field(3), statusInfo, FALSE)
+                    else
+                        LogMessage DriverCMD &" did not branch.  Value (" & field(4) &") not within range (" & field(5) &" - " & field(6) & ").", "", ""
+                        .statuscode = DDU_NO_SCRIPT_FAILURE 
+                    end if
+                 else 'the values are strings performing string comparisons
+                    If UCASE(field(7)) = "CASEINSENSITIVE" Then
+                        field(4) = UCase( field(4) )
+                        field(5) = UCase( field(5) )
+                        field(6) = UCase( field(6) )
+                    End If 
+                    if (CompareStr(field(4),field(5)) > -1) And (CompareStr(field(4),field(6)) = -1) then
+                       LogMessage DriverCMD &" value (" & field(4) &") within range (" & field(5) &" - " & field(6) & "). Attempting branch to """& field(3) &"""", "", ""
+                        'this routine logs successful or failed branching
+                        .statuscode = DDELocateBlockID(field(3), statusInfo, FALSE)
+                    else
+                        LogMessage DriverCMD &" did not branch.  Value (" & field(4) &") not within range (" & field(5) &" - " & field(6) & ").", "", ""
+                        .statuscode = DDU_NO_SCRIPT_FAILURE 
+                    end if                    
+                  end if
+             end if
+
+         Case DDU_ON_NOT_IN_RANGE_GOTO_BLOCKID
+
+             field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)  'blockid
+             field(4) = GetTrimmedQuotedField(.inputrecord, 4, .separator)  'value1
+             field(5) = GetTrimmedQuotedField(.inputrecord, 5, .separator)  'low end of range
+             field(6) = GetTrimmedQuotedField(.inputrecord, 6, .separator)  'high end of range            
+             field(7) = GetTrimmedQuotedField(.inputrecord, 7, .separator)  'mode
+             
+             if field(3) = "" then
+                LogMessage "Missing required BLOCKID specification in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           .FAILED_MESSAGE, .InputRecord
+             else
+                if (IsNumeric(field(4)) = -1) And (IsNumeric(field(5)) = -1) And (IsNumeric(field(6)) = -1) then
+                    'inputs are numeric using numeric comparison
+                    value1 = CDBL(field(4))
+                    value2 = CDBL(field(5))
+                    value3 = CDBL(field(6))   
+                    if (value1 < value2) OR (value1 > value3) then
+                        LogMessage DriverCMD &" value (" & field(4) &") not within range (" & field(5) &" - " & field(6) & "). Attempting branch to """& field(3) &"""", "", ""
+                        'this routine logs successful or failed branching
+                        .statuscode = DDELocateBlockID(field(3), statusInfo, FALSE)
+                    else
+                        LogMessage DriverCMD &" did not branch.  Value (" & field(4) &") within range (" & field(5) &" - " & field(6) & ").", "", ""
+                        .statuscode = DDU_NO_SCRIPT_FAILURE 
+                    end if
+                else 'inputs are strings using string compare
+                    If UCASE(field(7)) = "CASEINSENSITIVE" Then
+                        field(4) = UCase( field(4) )
+                        field(5) = UCase( field(5) )
+                        field(6) = UCase( field(6) )
+                    End If 
+                    if (CompareStr(field(4),field(5)) = -1) Or (CompareStr(field(4),field(6)) > 1) then
+                       LogMessage DriverCMD &" value (" & field(4) &") not within range (" & field(5) &" - " & field(6) & "). Attempting branch to """& field(3) &"""", "", ""
+                        'this routine logs successful or failed branching
+                        .statuscode = DDELocateBlockID(field(3), statusInfo, FALSE)
+                    else
+                        LogMessage DriverCMD &" did not branch.  Value (" & field(4) &") within range (" & field(5) &" - " & field(6) & ").", "", ""
+                        .statuscode = DDU_NO_SCRIPT_FAILURE 
+                    end if                                     
+                end if
+             end if  
+              
+            Case DDU_ON_GUI_EXISTS_GOTO_BLOCKID
+
+            field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)  'blockid
+            if field(3) = "" then
+                LogMessage "Missing required BLOCKID specification in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           .FAILED_MESSAGE, .InputRecord
+            else
+                .windowname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+                .compname = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+                if ((.windowname = "")OR(.compname="")) then
+                    'changed from WARNING to FAILURE 11.15.2005 Bob Lawler (RJL)
+                    LogMessage "Missing required parameters in table " & _
+                               .FileName & " at line " & .LineNumber, _
+                               .fac, FAILED_MESSAGE, .InputRecord
+                else
+                   
+                    field(6) = GetTrimmedQuotedField(.inputrecord, 6, .separator)   'wait period
+  
+                    if field(6) = "" then field(6) = 15
+                    if Not IsNumeric(field(6)) then 
+                        field(6) = 15
+                        LogMessage "Invalid " & DriverCMD &" timeout parameter.  Using default: 15", _
+                       WARNING_MESSAGE, .InputRecord
+                     end if
+            
+                    status = DDGWaitForGUI(.windowname, .compname, field(6)) 
+  
+                    if status <> 0 then
+                          LogMessage DriverCMD &" did not branch. Did not find object " & _
+                                   .WindowName & ":" & .CompName & " specified in table " & _
+                                   .FileName & " at line " & .LineNumber, "", ""
+                                   .statuscode = DDU_NO_SCRIPT_FAILURE
+                    else
+                         LogMessage DriverCMD &" found object " & .WindowName & ":" & .CompName & _
+                                   " within timeout period. Attempting branch to """& field(3) &"""", "", ""
+                                  'this routine logs successful or failed branching
+                                  .statuscode = DDELocateBlockID(field(3), statusInfo, FALSE)
+            
+                    end if
+                End if
+            end if
+
+
+        Case DDU_ON_GUI_NOT_EXIST_GOTO_BLOCKID
+
+            field(3) = GetTrimmedQuotedField(.inputrecord, 3, .separator)  'blockid
+            if field(3) = "" then
+                LogMessage "Missing required BLOCKID specification in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+            else
+                .windowname = GetTrimmedQuotedField(.inputrecord, 4, .separator)
+                .compname = GetTrimmedQuotedField(.inputrecord, 5, .separator)
+                if ((.windowname = "")OR(.compname="")) then
+                    'changed from WARNING to FAILURE 11.15.2005 Bob Lawler (RJL)
+                    LogMessage "Missing required parameters in table " & _
+                               .FileName & " at line " & .LineNumber, _
+                               .fac, FAILED_MESSAGE, .InputRecord
+                else
+
+                    field(6) = GetTrimmedQuotedField(.inputrecord, 6, .separator)   'wait period
+  
+                    if field(6) = "" then field(6) = 15
+                    if Not IsNumeric(field(6)) then 
+                        field(6) = 15
+                        LogMessage "Invalid " & DriverCMD &" timeout parameter.  Using default: 15", _
+                       WARNING_MESSAGE, .InputRecord
+                     end if
+            
+                    status = DDGWaitForGUIGone(.windowname, .compname, field(6)) 
+                                
+                    if status = 0 or status = 1 then '0 = GUI gone within timeout, 1 = GUI already gone              
+                        LogMessage DriverCMD &" did not find object " & .WindowName & ":" & .CompName & _
+                                   " within timeout period. Attempting branch to """& field(3) &"""", "", ""
+                        'this routine logs successful or failed branching
+                        .statuscode = DDELocateBlockID(field(3), statusInfo, FALSE)
+                    else
+                        LogMessage DriverCMD &" did not branch. Found object " & _
+                                   .WindowName & ":" & .CompName & " specified in table " & _
+                                   .FileName & " at line " & .LineNumber, "", ""
+                        .statuscode = DDU_NO_SCRIPT_FAILURE
+                    end if
+                End if
+            end if
+
+
+        Case DDU_ON_MENUITEM_CONTAINS_STATE_GOTO_BLOCKID, DDU_ON_PARTIAL_MENUITEM_CONTAINS_STATE_GOTO_BLOCKID
+
+             blockid = GetTrimmedQuotedField(.inputrecord, 3, .separator)  
+             .windowname = GetTrimmedQuotedField(.inputrecord, 4, .separator)                
+             .compname = GetTrimmedQuotedField(.inputrecord, 5, .separator)  
+             menuitem = GetTrimmedQuotedField(.inputrecord, 6, .separator)  
+             teststate = GetTrimmedQuotedField(.inputrecord, 7, .separator)  
+
+             if blockid = "" then
+                 LogMessage "Missing required BLOCKID specification in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+
+             elseif .windowname = "" then
+                 LogMessage "Missing required WINDOWNAME in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+
+             elseif .compname = "" then
+                 LogMessage "Missing required COMPONENTNAME in table "  & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+
+             elseif menuitem = "" then
+                 LogMessage "Missing required MenuItem in table " & _
+                           .FileName & " at line " & .LineNumber, _
+                           FAILED_MESSAGE, .InputRecord
+
+             elseif teststate = "" then
+                 LogMessage "Missing required State in table " & _
+                            .FileName & " at line " & .LineNumber, _
+                            FAILED_MESSAGE, .InputRecord
+                
+             else
+                 if SDinitOTRDGUIIDVariables(.windowname, .compname) <> 0 then
+                    DDEDriverCommand = .statuscode
+                    exit function
+                 end if                 
+                 if Not IsObject(.compGUIID) then
+                     LogMessage .WindowName &":"& .CompName &" NOT found in App Map for table "  & _
+                                .FileName & " at line " & .LineNumber, _
+                                FAILED_MESSAGE, .InputRecord
+                     DDDriverFlowCommand = .statuscode
+                     Exit Function
+                 end if
+
+                 DDGGetGUIPropertyVariant .compGUIID, "hWnd", hWndValue
+        
+                 If VarType( hWndValue ) = 8 And UCASE(Left( hWndValue, 2 )) = "0X" then
+                     .compHandle = ConvertHex2Long( hWndValue )
+                 else
+                     .compHandle = hWndValue
+                 end If                     
+
+                 if .compHandle = 0 then
+                     LogMessage .WindowName &":"& .CompName &" does NOT have a valid OS handle in table "  & _
+                                .FileName & " at line " & .LineNumber, _
+                                FAILED_MESSAGE, .InputRecord
+                     DDDriverFlowCommand = .statuscode
+                     Exit Function
+                 end if
+                 
+                 'default to WARNING unless CW record used
+                 if (.recordType = DDU_DRIVER_COMMAND_WARNOK) then  'CW record
+                     .statuscode = DDU_NO_SCRIPT_FAILURE 
+                     msgtype = GENERIC_MESSAGE
+                 else  'normal C record
+                     .statuscode = DDU_SCRIPT_WARNING 
+                     msgtype = WARNING_MESSAGE
+                 end if
+                   
+                 hMenu = GetMenu(.compHandle)
+                 
+                 if hMenu = 0 then
+                     LogMessage DriverCMD &" WARNING. Invalid parameters provided or "& _
+                                .CompName &" has no standard Windows menu!  "& _
+                                "See table "& .FileName &" at line "& _
+                                .LineNumber, msgtype, _
+                                .InputRecord
+                     DDDriverFlowCommand = .statuscode
+                     Exit Function
+                 end if
+                 
+                 if UCase(DriverCMD) = DDU_ON_PARTIAL_MENUITEM_CONTAINS_STATE_GOTO_BLOCKID then
+                     match = 1 'allow partial match of the menuItem
+                 else 
+                     match = 0
+                 end if
+
+                 'get the MenuInfo on the hierarchy string (if valid)
+                 status = MUGetMenuHandleInfoFromHierarchy (hMenu, menuitem, info, match)
+    
+                 'on failure
+                 if status = 0 then
+                     LogMessage menuitem &" was not found in the provided menu."& _
+                                "  See table "& .FileName &" at line "& _
+                                .LineNumber, msgtype, _
+                                DriverCMD &" command WARNING."
+                     DDDriverFlowCommand = .statuscode
+                     Exit Function
+                 end if
+
+                 'get the actual current state string of the menuitem
+                 menuState = MUGetMenuItemStateString(info.state)
+        
+                 status = MUVerifyTestStateString (testState, menuState)
+                 if status = 1 then
+                     LogMessage "MenuState '"& menustate &"' contains state "& testState &". "& _
+                                "Attempting branch to """& blockid &"""", "", ""
+                                'this routine logs successful or failed branching
+                     .statuscode = DDELocateBlockID(blockid, statusInfo, FALSE)
+                 else
+                     LogMessage DriverCMD &" did not branch. " & _
+                                "MenuState '"& menustate &"' did not contain """& testState &"""", _
+                                "", ""
+                     .statuscode = DDU_NO_SCRIPT_FAILURE
+                 end if
+             end if        
+
+        Case Else
+
+            .statuscode = DDU_SCRIPT_NOT_EXECUTED
+
+      End Select
+
+    DDDriverFlowCommand = .statuscode
+
+    End With
+    
+End Function
+
+

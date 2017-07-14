@@ -1,0 +1,813 @@
+﻿Option Explicit
+
+'##############################################################################
+'#
+'# BufferUtilities.SBL  SOURCECODE
+'#                                                                         
+'#    NOTE:  When adding routines update exports in BufferUtilities.SBH      
+'#
+'# MODULE DESCRIPTION:
+'#
+'# Generic Utilities for implementing different kinds of storage buffers.
+'# Things like First In First Out (FIFO) buffers, STACKS,  etc...
+'#
+'# NOTE:
+'# SQABasic does not allow an array to be part of a user-defined data type.
+'# Because of this, a FIFO or STACK or other buffer type is actually comprised 
+'# of two things referred to as a buffer pairing:
+'#
+'#      BufferInfo  tracks pointers for read and write and size information
+'#      Buffer      array of the desired type used as the buffer
+'#
+'# These buffer pairings actually get modified separately and care must be taken to 
+'# insure that they remain in sync with each other.  If they do not remain in 
+'# sync then data corruption and unexpected program behavior (or maybe even 
+'# access violations) could result.  Normally, it is the implementing buffer library 
+'# that will call these routines ini conjunction with its own routines in order to 
+'# keep these pairings in sync.
+'#
+'# The routines in this library are intended to maintain the BufferInfo piece
+'# of the pair.  Other libraries or modules will contain the routines that
+'# maintain the buffer array of the desired type used at that time.  It is those 
+'# modules or libraries that generally call these in order to maintain synch.
+'# Examples to study/copy would be the FileInfoFIFO buffer and associated routines 
+'# found in the FileUtilities Library as well as the StepDriverSTACK buffer files.
+'#
+'#
+'# This library is defined by:
+'#
+'# BufferUtilities_X    Constants, Globals, Types etc.
+'# BufferUtilities      Sourcecode and Detailed Documentation
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'##############################################################################
+
+
+'# PUBLIC DEPENDENCIES
+'USEUNIT BufferUtilities_X
+
+
+'# PRIVATE DEPENDENCIES
+
+
+'# FORWARD DECLARATIONS
+
+
+'############################################################################
+'#
+'# Function BUGetStatusString (status As Integer) As String
+'#
+'# DESCRIPTION:
+'#
+'#  Converts an integer status value to a representative string suitable
+'#  for output and/or reporting.  It expects the provided status value to be
+'#  valid for these utilities.  If it is not, then a "status unrecognized" 
+'#  string will be returned.
+'#
+'#  Example: 
+'#
+'#      status = BUFFER_NOT_INITIALIZED  (integer value)
+'#      returns: "BUFFER_NOT_INITIALIZED"  (string)
+'#
+'# PARAMETERS:
+'#
+'#  status     a BufferUtilities integer status value
+'#
+'# RETURNS:
+'#
+'#  String representation of that status value or a "status unrecognized" value.
+'#
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function BUGetStatusString (status)
+
+    Select Case status    
+        Case BUFFER_INITIALIZED
+            BUGetStatusString = sBUFFER_INITIALIZED
+        Case BUFFER_NOT_INITIALIZED
+            BUGetStatusString = sBUFFER_NOT_INITIALIZED
+        Case BUFFER_IS_FULL
+            BUGetStatusString = sBUFFER_IS_FULL
+        Case BUFFER_IS_EMPTY
+            BUGetStatusString = sBUFFER_IS_EMPTY
+        Case Else
+            BUGetStatusString = sUNKNOWN_STATUS
+    End Select
+    
+End Function
+
+
+
+'############################################################################
+'#
+'# Function InitFIFO(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   Initialize a BufferInfo with values for a generic FIFO buffer.
+'#   This routine is necessary to initialize a FIFO BufferInfo unless the
+'#   user has some customized initialization code of their own.
+'#
+'#  By default, buffers are dimensioned to allow for 10 entries with default 
+'#  expansion sizes of 10 entries each expansion.  The user can override this
+'#  by presetting the BufferInfo.defaultSize and BufferInfo.redimIncrement 
+'#  fields prior to this call.
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo to initialize with FIFO settings
+'#
+'# RETURNS:
+'#
+'#    BUFFER_INITIALIZED  (Success)
+'#    (currently there are no error conditions)
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function InitFIFO(info)
+
+    With info
+        .reader = 1
+        .writer = 1
+        if .redimIncrement < 1 Then .redimIncrement = 10
+        if .defaultSize < 1 Then .defaultSize = 10
+        .size = .defaultSize
+    End With
+        
+    InitFIFO = BUFFER_INITIALIZED
+    
+End Function
+
+
+'############################################################################
+'#
+'# Function IsFIFOInit(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#  Verifies that the BufferInfo appears to have been initialized.
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo 
+'#
+'# RETURNS:
+'#
+'#      BUFFER_INITIALIZED      The FIFO appears initialized.
+'#      BUFFER_NOT_INITIALIZED  One or more fields has unexpected values (usually 0)
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function IsFIFOInit (info)
+    With info
+        isFIFOInit = BUFFER_NOT_INITIALIZED
+        if .reader < 1 then exit function
+        if (.writer < 1) OR (.writer < .reader) then exit function
+        if .size < 1  then exit function
+        if .defaultsize < 1 then exit function
+        if .redimIncrement < 1 then exit function
+    End With
+    isFIFOInit = BUFFER_INITIALIZED
+End Function
+
+
+'############################################################################
+'#
+'# Function GetFIFOSize (info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   Retrieves the number of items currently stored in a FIFO buffer.
+'#   Currently, the FIFO buffer is a separate entity and must be maintained 
+'#   as such.  This routine calculates the number of items based on the current 
+'#   values of the reader and writer indices in the provided BufferInfo.
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo for a FIFO buffer.
+'#
+'# RETURNS:
+'#
+'#    N                       number of items calculated to be in the buffer.
+'#    BUFFER_NOT_INITIALIZED  if FIFO is NOT PROPERLY INITIALIZED.
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function GetFIFOSize (info)
+
+    GetFIFOSize = BUFFER_NOT_INITIALIZED
+    if isFIFOInit(info) = BUFFER_NOT_INITIALIZED then exit function
+    
+    GetFIFOSize = info.writer - info.reader
+
+End Function
+
+
+
+'############################################################################
+'#
+'# Function FIFOIsFull(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   Determine if a FIFO Buffer cannot have items added.  Because of the nature 
+'#   of implementation the ReDIMed size of the buffer and the number of items 
+'#   in the buffer do not have to be equal for the FIFO to be "Full".  If the 
+'#   buffer is "Full" it must either be "Optimized" to free up unused entries or
+'#   it must be ReDIMMensioned to be bigger.
+'#   Remember to PRESERVE when ReDIMming the buffer or all it's existing entries
+'#   will be lost.
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo setup as a FIFO buffer.
+'#
+'# RETURNS:
+'#
+'#   BUFFER_INITIALIZED      if FIFO is NOT FULL
+'#   BUFFER_IS_FULL          if FIFO IS FULL
+'#   BUFFER_NOT_INITIALIZED  error if FIFO is NOT PROPERLY INITIALIZED
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function FIFOIsFull(info)
+
+    FIFOIsFull = BUFFER_NOT_INITIALIZED             
+    if IsFIFOInit(info) = BUFFER_NOT_INITIALIZED then exit function
+    FIFOIsFull = BUFFER_IS_FULL                     
+    if info.writer > info.size Then exit function
+    FIFOIsFull = BUFFER_INITIALIZED                 'is not full
+
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function FIFOIsEmpty(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Determines if there are no entries in the FIFO.  
+'#      Currently, the FIFO buffer is a separate entity and must be maintained 
+'#      as such.
+'#
+'# PARAMETERS:
+'#
+'#      info    a BufferInfo setup as a FIFO buffer.
+'#
+'# RETURNS:
+'#
+'#      BUFFER_INITIALIZED          if FIFO is NOT empty
+'#      BUFFER_IS_EMPTY             if FIFO IS EMPTY
+'#      BUFFER_NOT_INITIALIZED      error if FIFO is NOT PROPERLY INITIALIZED
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function FIFOIsEmpty(info)
+
+    FIFOIsEmpty = BUFFER_NOT_INITIALIZED           
+    if isFIFOInit(info) = BUFFER_NOT_INITIALIZED then exit function
+    FIFOIsEmpty = BUFFER_IS_EMPTY                  
+    if info.writer = info.reader Then exit function
+    FIFOIsEmpty = BUFFER_INITIALIZED                    'is not empty
+
+End Function
+
+
+
+'############################################################################
+'#
+'# Function PopFIFOEntry(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   If the FIFO is not empty the routine adjusts all the pointers as if a 
+'#   POP had occurred on the buffer.  Currently, the FIFO buffer is a separate 
+'#   entity and must be maintained as such.  
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo setup as a FIFO
+'#
+'# RETURNS:
+'#
+'#   N                              new calculated count of items in the FIFO. 
+'#                                  (0 if empty AFTER the POP.)
+'#   BUFFER_NOT_INITIALIZED         error if FIFO is NOT PROPERLY INITIALIZED
+'#   BUFFER_IS_EMPTY                error if FIFO is EMPTY on entry.
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function PopFIFOEntry(info)
+
+    Dim status
+        
+    'if FIFO is empty or uninitialized then exit with failure
+    status = FIFOIsEmpty(info)
+    if status < BUFFER_INITIALIZED then
+        PopFIFOEntry = status
+        exit function
+    end if
+    
+    info.reader = info.reader +1
+    PopFIFOEntry = GetFIFOSize(info)
+
+End Function
+
+
+
+'############################################################################
+'#
+'# Function PushFIFOEntry(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   If the FIFO is not maxed out the routine adjusts all the pointers as if a 
+'#   PUSH had occurred on the buffer.  Currently, the FIFO buffer is a separate 
+'#   entity and must be maintained as such.  
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo setup as a FIFO
+'#
+'# RETURNS:
+'#
+'#   N                                  The new count of items in the FIFO.
+'#   BUFFER_NOT_INITIALIZED             if FIFO is NOT PROPERLY INITIALIZED
+'#   BUFFER_IS_FULL                     error if FIFO is FULL on entry
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function PushFIFOEntry(info)
+    
+    Dim status
+    
+    status = FIFOIsFull(info)
+    If status < BUFFER_INITIALIZED Then 
+        PushFIFOEntry = status
+        exit function
+    end if
+    
+    info.writer = info.writer +1
+    PushFIFOEntry = GetFIFOSize(info)
+
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function OptimizeFIFO (info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Shifts pointers down and thus releases unused entries in the buffer.
+'#      This routine should be called when a buffer has been signaled as FULL
+'#      even though the number if entries is less than the dimensioned size
+'#      of the buffer.  It should also be called before any ReDIM of a buffer.
+'#      Currently, the FIFO buffer is a separate entity and must be maintained 
+'#      as such.  It is those routines that will call this routine.
+'#      CAUTION: If this routine is run and the associated buffer has not been
+'#              optimized then the data and indices are likely corrupted.
+'#
+'# PARAMETERS:
+'#
+'#      info   -the BufferInfo to reposition indices on.
+'#
+'# RETURNS:
+'#
+'#      N                       The number of items in the buffer.  
+'#                              (This number should not change between entry 
+'#                               and exit.)
+'#
+'#      BUFFER_NOT_INITIALIZED  if the BufferInfo is NOT PROPERLY INITIALIZED
+'#
+'# ERRORS:
+'#
+'#      none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function OptimizeFIFO (info)
+
+    DIM result
+
+    OptimizeFIFO = BUFFER_NOT_INITIALIZED
+    if IsFIFOInit(info) = BUFFER_NOT_INITIALIZED then exit function
+        
+    result = info.writer - info.reader
+    info.reader = 1
+    info.writer = info.reader + result
+    OptimizeFIFO = GetFIFOSize(info)
+
+End Function
+
+
+
+'############################################################################
+'#
+'# Function InitSTACK(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   Initialize a BufferInfo with values for a generic STACK buffer.
+'#   This routine is necessary to initialize a STACK BufferInfo unless the
+'#   user has some customized initialization code of their own.
+'#
+'#   These STACKs are initialized such that the actual buffer array should 
+'#   1-based.  Array element 0 will never be used.  As such, the initial 
+'#   info.writer position will be 1, while the info.reader will be 0 (empty).
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo to initialize with STACK settings
+'#
+'# RETURNS:
+'#
+'#    BUFFER_INITIALIZED  (Success)
+'#    (currently there are no error conditions)
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function InitSTACK(info)
+
+    With info
+        .reader = 0
+        .writer = 1
+        if .redimIncrement < 1 Then .redimIncrement = 10
+        if .defaultSize < 1 Then .defaultSize = 10
+        .size =.defaultSize
+    End With
+    
+    InitSTACK = BUFFER_INITIALIZED
+    
+End Function
+
+
+
+'############################################################################
+'#
+'# Function IsSTACKInit(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#  Verifies that the BufferInfo appears to have been initialized.
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo 
+'#
+'# RETURNS:
+'#
+'#      BUFFER_INITIALIZED      The STACK appears initialized.
+'#      BUFFER_NOT_INITIALIZED  One or more fields has unexpected values (usually 0)
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function IsSTACKInit (info)
+    With info
+        isSTACKInit = BUFFER_NOT_INITIALIZED        
+        if (.writer < 1) OR (.writer <= .reader) then exit function
+        if .size < 1  then exit function
+        if .defaultsize < 1 then exit function
+        if .redimIncrement < 1 then exit function
+    End With
+    isSTACKInit = BUFFER_INITIALIZED
+End Function
+
+
+'############################################################################
+'#
+'# Function GetSTACKSize (info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   Retrieves the number of items currently stored in a STACK buffer.
+'#   Currently, the STACK buffer is a separate entity and must be maintained 
+'#   as such.  
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo for a STACK buffer.
+'#
+'# RETURNS:
+'#
+'#   N                          the number of items in the STACK.
+'#   BUFFER_NOT_INITIALIZED     error if STACK is NOT PROPERLY INITIALIZED
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function GetSTACKSize (info)
+
+    GetSTACKSize = BUFFER_NOT_INITIALIZED
+    if IsSTACKInit(info) = BUFFER_NOT_INITIALIZED then exit Function
+    GetSTACKSize = info.reader
+    
+End Function
+
+
+'############################################################################
+'#
+'# Function STACKIsFull(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   Determine if a STACK Buffer cannot have items added.  
+'#   Remember to PRESERVE when ReDIMming the buffer or all it's existing entries
+'#   will be lost.  This is normally handled by the library or module that
+'#   maintains the actual buffer array.
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo setup as a STACK buffer.
+'#
+'# RETURNS:
+'#
+'#   BUFFER_INITIALIZED                 if STACK is NOT FULL
+'#   BUFFER_IS_FULL                     if STACK IS FULL
+'#   BUFFER_NOT_INITIALIZED             error if STACK is NOT PROPERLY INITIALIZED
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function STACKIsFull(info)
+
+    STACKIsFull = BUFFER_NOT_INITIALIZED
+    if IsSTACKInit(info) = BUFFER_NOT_INITIALIZED then exit function
+    STACKIsFull = BUFFER_IS_FULL
+    if info.writer > info.size Then exit function
+    STACKIsFull = BUFFER_INITIALIZED                'not full
+    
+End Function
+
+
+
+'############################################################################
+'#
+'#  Function STACKIsEmpty(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#      Determines if there are no entries in the STACK.
+'#      Currently, the STACK buffer is a separate entity and must be maintained 
+'#      as such.
+'#
+'# PARAMETERS:
+'#
+'#      info    a BufferInfo setup as a STACK buffer.
+'#
+'# RETURNS:
+'#
+'#       BUFFER_INITIALIZED             if STACK is NOT empty
+'#       BUFFER_IS_EMPTY                if STACK IS EMPTY
+'#       BUFFER_NOT_INITIALIZED         error if STACK is NOT PROPERLY INITIALIZED
+'#
+'# ERRORS:
+'#
+'#       none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    (Carl Nagle) Completed STACK routines
+'#
+'############################################################################
+Function STACKIsEmpty(info)
+
+    STACKIsEmpty = BUFFER_NOT_INITIALIZED
+    if IsSTACKInit(info) = BUFFER_NOT_INITIALIZED then exit function
+    STACKIsEmpty = BUFFER_IS_EMPTY
+    if info.reader = 0 Then exit function
+    STACKIsEmpty = BUFFER_INITIALIZED               'is not empty
+
+End Function
+
+
+
+'############################################################################
+'#
+'# Function PopSTACKEntry(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   If the STACK is not empty the routine adjusts all the pointers as if a 
+'#   POP had occurred on the buffer.  Currently, the STACK buffer is a separate 
+'#   entity and must be maintained as such.  It is the actual STACK buffer 
+'#   that POPs the data then calls this routine to keep synchronization.  
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo setup as a STACK
+'#
+'# RETURNS:
+'#
+'#   N                          The new calculated count of items in the STACK. 
+'#                              (0 if now empty AFTER the POP.)
+'#   BUFFER_IS_EMPTY            error if empty on entry
+'#   BUFFER_NOT_INITIALIZED     error if STACK is NOT PROPERLY INITIALIZED.
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    (Carl Nagle) Completed STACK routines
+'#
+'############################################################################
+Function PopSTACKEntry(info)
+
+    Dim status
+        
+    'if STACK is empty or uninitialized then exit with failure
+    status = STACKIsEmpty(info)
+    if status < BUFFER_INITIALIZED then
+        PopSTACKEntry = status
+        Exit Function
+    end if
+    
+    info.writer = info.reader
+    info.reader = info.reader -1
+    PopSTACKEntry = GetSTACKSize(info)
+
+End Function
+
+
+
+'############################################################################
+'#
+'# Function PushSTACKEntry(info As BufferInfo) As Integer
+'#
+'# DESCRIPTION:
+'#
+'#   If the STACK is not maxed out the routine adjusts all the pointers as if a 
+'#   PUSH had occurred on the buffer.  Currently, the STACK buffer is a separate 
+'#   entity and must be maintained as such.  It is the actual STACK buffer 
+'#   that PUSHes the data then calls this routine to keep synchronization.  
+'#
+'# PARAMETERS:
+'#
+'#   info   -a BufferInfo setup as a STACK
+'#
+'# RETURNS:
+'#
+'#   N                      The new calculated count of items in the STACK.
+'#
+'#  BUFFER_IS_FULL          error if the buffer is already maxed out.
+'#                          (Normally, the module implementing the STACK buffer 
+'#                           will ensure the STACK is not full or ReDim the 
+'#                           array and these pointers to accomodate)
+'#
+'#  BUFFER_NOT_INITIALIZED  error if buffer NOT PROPERLY INITIALIZED
+'#
+'#
+'# ERRORS:
+'#
+'#   none
+'#
+'# Orig Author: John Crunk
+'# Orig   Date: SEP 14, 2006
+'# History:
+'#
+'#      SEP 14, 2006    Original Release
+'#
+'############################################################################
+Function PushSTACKEntry(info)
+    
+    Dim status
+    
+    status = STACKIsFull(info)
+    if status < BUFFER_INITIALIZED THEN
+        PushSTACKEntry = status
+        exit function
+    end if    
+    
+    info.reader = info.writer
+    info.writer = info.writer +1
+    PushSTACKEntry = GetSTACKSize(info)
+
+End Function
+
+
+
