@@ -971,9 +971,6 @@ End Function
 Sub Test1
     Dim combo, popup, item, itemText, match, millis
     
-    'Set combo = Sys.Browser("iexplore").Page("***REMOVED***?locale=en_US&zone=GMT+08%3A00").Panel("columnPropDialog").Panel(1).Table(0).Cell(8, 1).Panel("widget_columnFormatPropSelect")
-    'itemText = "SDFDD."
-    
     Set combo = Sys.Browser("iexplore").Page("http://dojotoolkit.org/documentation/tutorials/1.9/selects_using_stores/demos/ProgComboBox.php").Panel(0).Panel(0).Panel("widget_stateSelect")
     itemText = "Alaska"
     'itemText = "Washington"

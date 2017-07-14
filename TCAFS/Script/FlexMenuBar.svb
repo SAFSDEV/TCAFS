@@ -1683,8 +1683,7 @@ End Function
 '# History:
 '#
 '#      SEP 21, 2011    Original Release
-'#      JUN 12, 2012    (Lei Wang) Modify to treat SELECTMENUITEM as SELECTUNVERIFIEDMENUITEM, see defect
-'#                      ***REMOVED***?ticket=89432&changeflag=0
+'#      JUN 12, 2012    (Lei Wang) Modify to treat SELECTMENUITEM as SELECTUNVERIFIEDMENUITEM, see defect testhelp 89432
 '#
 '############################################################################
 Sub FlexMenuBarMain()
